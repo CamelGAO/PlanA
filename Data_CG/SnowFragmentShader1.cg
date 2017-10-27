@@ -1,0 +1,34 @@
+struct vin
+{
+	float4 vcolor : COLOR0;
+	float fogfactor : TEXCOORD1;
+};
+
+struct fout
+{
+	float4 color : COLOR;
+};
+
+void SnowFragmentShader1(in vin IN, out fout OUT, float2 texCoord : TEXCOORD0, uniform sampler2D decal, uniform float density, uniform float4 fog_color, uniform float time_factor)
+{
+	float4 color = tex2D(decal,texCoord);
+
+	if(color.a < 0.2f)
+	{
+		OUT.color = float4(0.0, 0.0, 0.0, 0.0);
+		return;
+	}
+	
+	if(IN.vcolor.a >= 0.9f)
+	{
+		float intensity = (color.r+color.g+color.b)/3.0f;
+		OUT.color = float4(lerp(float3(color.r,color.g,color.b),float3(1.0f, 1.0f, 1.0f),intensity * density),1.0f);
+	}
+	else
+	{
+		OUT.color = color;
+	}
+	
+	OUT.color = float4(OUT.color.xyz * time_factor, 1.0f);
+	OUT.color = float4(OUT.color.xyz * IN.fogfactor + (1 - IN.fogfactor) * fog_color.xyz * time_factor, 1.0f);
+}

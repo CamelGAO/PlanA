@@ -1,0 +1,48 @@
+struct appin
+{
+    float3 position  : POSITION;
+    float3 normal    : NORMAL;
+    float4 color0    : COLOR0;
+    float2 texcoord0 : TEXCOORD0;
+};
+
+struct vertout
+{
+	float4 position  : POSITION;
+	float4 color0    : COLOR0;
+	float2 texcoord0 : TEXCOORD0;
+    float3 vposition : TEXCOORD2;
+    float range : TEXCOORD3;
+    float4 vcolor : TEXCOORD4;
+};
+
+
+vertout RadarVertexShader(appin IN,uniform float4x4 modelViewProj,uniform float4x4 modelView,
+                          uniform float terrainmode)
+{
+	vertout OUT;
+	
+	float4 tempPosition = float4( IN.position.x, IN.position.y, IN.position.z, 1.0f ); 
+	OUT.position = mul( modelViewProj, tempPosition);	//屏幕空间坐标，即顶点在屏幕上的位置
+	
+	OUT.vposition = IN.position;
+	
+	float3 position = mul(modelView,tempPosition).xyz;	
+	OUT.range = length(position);
+	
+	if(terrainmode==1.0f)  //分层着色
+	{
+	    if( IN.position.z<15.0f )  OUT.color0 = float4(108.0f/255.0f,135.0f/255.0f,132.0f/255.0f,1.0f);
+	    else if( IN.position.z<30.0f ) OUT.color0 = float4(219.0f/255.0f,182.0f/255.0f,81.0f/255.0f,1.0f);
+	    else OUT.color0 = float4(132.0f/255.0f,98.0f/255.0f,53.0f/255.0f,1.0f);
+	}
+	
+	else if(terrainmode==2.0f)  OUT.color0 = float4(0.35f, 0.27f, 0.16f, 1.0f);
+	
+	OUT.vcolor = OUT.color0;
+
+    OUT.texcoord0 = IN.texcoord0;
+	
+	return OUT;
+}
+

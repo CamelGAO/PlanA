@@ -1,0 +1,379 @@
+
+struct fout
+{
+	float4 color : COLOR;
+};
+
+struct fin
+{
+	float4 vcolor_vertex : COLOR0;
+	float4 colorfactor : COLOR1;
+	float4 normal : TEXCOORD6;
+};
+
+const float2 sample_offset[9] = 
+{
+	{0,				0},
+	{0.0001f,	0},
+	{0.0001f,	-0.0001f},
+	{0,				-0.0001f},
+	{-0.0001f,	-0.0001f},
+	{-0.0001f,	0},
+	{-0.0001f,	0.0001f},
+	{0,				0.0001f},
+	{0.0001f,	0.0001f}
+};
+
+float4 getIrColor(float4 _color, float _fog_factor, float _accsnow_factor, float _accsnow_flag);
+float getFlag(float4 _pos, float4x4 _view_matrix, float _blendMode_test, float _max_range, float _view_range_r_test, float _view_range_h_test, float _view_range_v_test, float _view_shape_test);
+float4 getRadarColor(float4 _color, float4 _normal, float4x4 _view_matrix, float4x4 _modelviewIT_matrix);
+
+fout SensorFragmentShader2(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vposition : TEXCOORD7, float2 texcoord1 : TEXCOORD1,
+							float4 color_lidar : TEXCOORD4,  
+							float4 color_radar : TEXCOORD5,
+							uniform sampler2D decal,
+							uniform sampler2D tex2 : TEXUNIT2,
+							uniform float4x4 modelView,
+							uniform float4x4 modelViewIT,
+							uniform float4x4 proj : state.matrix.projection,
+							uniform sampler2D tex1 : TEXUNIT1,
+
+							uniform float max_range_lidar_test,
+							uniform float max_range_radar_test,
+							uniform float max_range_ir_test,
+
+							uniform float4x4 view_lidar_test,
+							uniform float4x4 view_radar_test,
+							uniform float4x4 view_ir_test,
+
+							uniform float lidar_view_range_r_test,
+							uniform float lidar_view_range_h_test, 
+							uniform float lidar_view_range_v_test,
+							uniform float lidar_view_shape_test,
+
+							uniform float radar_view_range_r_test,
+							uniform float radar_view_range_h_test, 
+							uniform float radar_view_range_v_test,
+							uniform float radar_view_shape_test,
+
+							uniform float ir_view_range_r_test,
+							uniform float ir_view_range_h_test, 
+							uniform float ir_view_range_v_test,
+							uniform float ir_view_shape_test,
+
+							uniform float blendMode_test,
+
+							uniform float density, //积雪强度
+
+							uniform float offset_test,
+							uniform float sampling_rate_test
+							)
+{
+	fout OUT;
+	float4 color[9];// = tex2D(decal, texcoord0);
+	for(int i = 0; i < 9; i++)
+	{
+		color[i] = tex2D(decal, texcoord0 + sample_offset[i]);
+	}
+
+
+	float4 color_model = color[0];
+	//float4 color_model = float4((color[0] + color[1]*2 + color[2] + color[3]*2 + color[4] + color[5]*2 + color[6] + color[7]*2 + color[8]).xyz/13, 1.0f);
+	//float4 color_model = float4((color[0]*8 - color[1] - color[2] - color[3] - color[4] - color[5] - color[6] - color[7] - color[8]).xyz, 1.0f);
+
+	if(color_model.a < 0.25f)     //纹理透明就不用处理了,例如十字树的纹理边缘
+	{
+		OUT.color = float4(0.0f, 0.0f, 0.0f, 0.0f);
+		return OUT;
+	}
+
+
+	
+	float4 tempPosition = float4( vposition.x, vposition.y, vposition.z, 1.0f);
+	float4 position = mul(modelView, tempPosition);
+
+	//判断lidar形状-start
+	float flag_lidar = getFlag(	position, 
+								view_lidar_test, 
+								blendMode_test, 
+								max_range_lidar_test, 
+								lidar_view_range_r_test, 
+								lidar_view_range_h_test, 
+								lidar_view_range_v_test, 
+								lidar_view_shape_test);
+	//判断lidar形状-end
+	
+	//判断radar形状-start
+	float flag_radar = getFlag(	position, 
+								view_radar_test, 
+								blendMode_test, 
+								max_range_radar_test, 
+								radar_view_range_r_test, 
+								radar_view_range_h_test, 
+								radar_view_range_v_test, 
+								radar_view_shape_test);
+	//判断radar形状-end
+	
+	//判断ir形状-start
+	float flag_ir = getFlag(	position, 
+								view_ir_test, 
+								blendMode_test, 
+								max_range_ir_test, 
+								ir_view_range_r_test, 
+								ir_view_range_h_test, 
+								ir_view_range_v_test, 
+								ir_view_shape_test);
+	//判断ir形状-end
+
+	//判断是否按database处理-start
+	float flag_database = 0.0f;
+	if(flag_ir < 0.1f && flag_radar < 0.1f && flag_lidar < 0.1f)
+	{
+		flag_database = 1.0f;
+	}
+	//判断是否按database处理-end
+
+	//确定是否显示激光雷达点-start
+	float4 colorlidar;
+	float4 pp_lidar = float4(position.xyz, 1.0f); //mul(view_lidar_test, float4(position.xyz, 1.0f));  //pp自建view的变换结构
+	float distance_lidar = length(pp_lidar.xyz);  //到传感器的距离
+	if(flag_lidar == 1.0f)
+	{
+		float4 ppp = mul(proj, pp_lidar);  //pp经过投影的得到ppp
+		float2 ppp_s = ppp.xy/ppp.w;
+		
+		float lidar_image_s = (ppp_s.x + 1.0f) * 0.5 * 0.4 + offset_test;
+		float lidar_image_t = (ppp_s.y + 1.0f) * 0.5 * 0.4 + offset_test;
+		colorlidar = tex2D(tex1, float2(lidar_image_s,lidar_image_t));
+	}
+	else
+	{
+		colorlidar = float4(0, 0, 0, 0);
+	}
+
+	float g = distance_lidar / max_range_lidar_test * sampling_rate_test + (1 - sampling_rate_test);
+	g = g * g;
+	float flag_a = colorlidar.a > g ? 1.0f : 0.0f;
+	//确定是否显示激光雷达点-end
+	
+
+	float databse_show_flag = IN.vcolor_vertex.a;
+	float radar_show_flag = IN.vcolor_vertex.b;
+
+	if(radar_show_flag < 0.1f)
+		color_radar = float4(0,0,0,0);
+
+	float4 color_database = color_model;
+	if(databse_show_flag < 0.2f)
+		color_database = float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+
+	if(blendMode_test == 1.0f)  //Lidar
+	{
+		if(flag_lidar == 1.0f && flag_a == 1.0f)
+			OUT.color = float4(color_lidar.xyz, 1.0f);
+		else
+			OUT.color = float4(0.0f, 0.0f, 0.0f, 1.0f); 
+	}
+	else if(blendMode_test == 2.0f)  //Lidar & Database
+	{
+		if(flag_lidar == 1.0f)
+		{
+			if(flag_a == 1.0f) OUT.color = float4(color_lidar.xyz, 1.0f);
+			else OUT.color = float4(0.0f, 0.0f, 0.0f, 1.0f);
+		}
+		else
+			OUT.color = color_database;
+	}
+	else if(blendMode_test == 3.0f)  //Lidar & Ir
+	{
+		if(flag_ir == 1.0f)   
+			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a);  
+		else
+			OUT.color = float4(0.0f, 0.0f, 0.0f, 1.0f); 
+
+		if(flag_lidar == 1.0f)   
+			OUT.color = lerp(OUT.color, color_lidar, color_lidar.r*0.8);//float4(color_lidar.xyz, 1.0f);
+	}
+	else if(blendMode_test == 4.0f)  //Lidar & Ir & Database
+	{
+		if(flag_ir == 1.0f)   
+			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a);   
+		else
+			OUT.color = color_database; 
+			
+		if(flag_lidar == 1.0f)   
+			OUT.color = lerp(OUT.color, color_lidar, color_lidar.r*0.8);//float4(color_lidar.xyz, 1.0f); 
+	}
+	else if(blendMode_test == 5.0f)  //Radar
+	{
+		if(flag_radar == 1.0f)
+		{
+			//float intensity = (color_model.r +  color_model.g +  color_model.b)/3;
+			//float4 graycolor = float4(intensity,intensity,intensity,1.0f);
+			//OUT.color = lerp(graycolor,color_radar,0.9f);
+			//if( 0 == color_radar.a )  OUT.color = float4(OUT.color.rgb,0.0f);
+			//OUT.color = getRadarColor(color_model, IN.normal, view_radar_test, modelViewIT);
+			OUT.color = color_radar;
+		}
+		else
+			OUT.color = float4(0.0f, 0.0f, 0.0f, 0.0f); 
+	}
+	else if(blendMode_test == 6.0f)  //Radar & Database
+	{
+		if(flag_radar == 1.0f)
+		{
+			// float intensity = (color_model.r +  color_model.g +  color_model.b)/3;
+			// float4 graycolor = float4(intensity,intensity,intensity,1.0f);
+			// OUT.color = lerp(graycolor,color_radar,0.9f);
+			// if( 0 == color_radar.a )  OUT.color = float4(OUT.color.rgb,0.0f);
+			//OUT.color = getRadarColor(color_model, IN.normal, view_radar_test, modelViewIT);
+			OUT.color = color_radar;
+		}
+		else
+			OUT.color = color_database; 
+	}
+	else if(blendMode_test == 7.0f)  //Radar & Ir
+	{
+		if(flag_ir == 1.0f && flag_radar == 0.0f)   
+			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a);   
+		else if(flag_ir == 0.0f && flag_radar == 1.0f)
+		{
+			// float intensity = (color_model.r +  color_model.g +  color_model.b)/3;
+			// float4 graycolor = float4(intensity,intensity,intensity,1.0f);
+			// OUT.color = lerp(graycolor,color_radar,0.9f);
+			// if( 0 == color_radar.a )  OUT.color = float4(OUT.color.rgb,0.0f);
+			//OUT.color = getRadarColor(color_model, IN.normal, view_radar_test, modelViewIT);
+			OUT.color = color_radar;
+
+		}
+		else if(flag_ir == 1.0f && flag_radar == 1.0f)
+		{
+
+			//color_radar = getRadarColor(color_model, IN.normal, modelViewIT, modelViewIT);
+			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a); 
+			if(radar_show_flag > 0.9f)
+			{
+				OUT.color = lerp(color_radar, OUT.color, (0.45+ pow(color_radar.g, 2) * 0.55) * OUT.color.a);
+				OUT.color.a = 1.0f;
+			}
+			else
+				OUT.color.a = 0.0f;
+
+		}
+		else
+			OUT.color = float4(0.0f, 0.0f, 0.0f, 0.0f); 
+	}
+	else if(blendMode_test == 8.0f) //Radar & Ir & Database
+	{
+		if(flag_ir == 1.0f && flag_radar == 0.0f)   
+			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a);   
+		else if(flag_ir == 0.0f && flag_radar == 1.0f)
+		{
+			// float intensity = (color_model.r +  color_model.g +  color_model.b)/3;
+			// float4 graycolor = float4(intensity,intensity,intensity,1.0f);
+			// OUT.color = lerp(graycolor,color_radar,0.9f);
+			// if( 0 == color_radar.a )  OUT.color = float4(OUT.color.rgb,0.0f);
+			//OUT.color = getRadarColor(color_model, IN.normal, view_radar_test, modelViewIT);
+			OUT.color = color_radar;
+		}
+		else if(flag_ir > 0.9f && flag_radar > 0.9f)
+		{
+			//color_radar = getRadarColor(color_model, IN.normal, modelViewIT, modelViewIT);
+			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a); 
+			if(radar_show_flag > 0.9f)
+			{
+				OUT.color = lerp(color_radar, OUT.color, (0.45+ pow(color_radar.g, 2) * 0.55) * OUT.color.a);
+				OUT.color.a = 1.0f;
+			}
+			else
+				OUT.color.a = 0.15f;
+		}
+		else
+			OUT.color = color_database; 
+	}
+
+	//OUT.color = color_model;
+	//OUT.color = float4(1.0f, 0.0f, 0.0f, 0.0f); 
+		
+	return OUT;
+}
+
+float4 getIrColor(float4 _color, float _fog_factor, float _accsnow_factor, float _accsnow_flag)
+{
+	float4 __color = _color;
+	float __intensity;
+	float __temp = 0.0f;   //指定材质范围的温度
+
+	if(__color.a < 0.1f )	return __color = float4(0,0,0,0);
+	
+	if(_accsnow_flag >= 0.9f)
+	{
+		__intensity = (__color.r + __color.g + __color.b) * 0.333333f;
+		__color = float4(lerp(float3(__color.r,__color.g,__color.b),float3(1.0f, 1.0f, 1.0f),__intensity * _accsnow_factor), 1.0f);
+	}
+	
+	__intensity = clamp(0.299*__color.r + 0.587*__color.g + 0.114*__color.b, 0, 1);
+
+	
+	if(__intensity < 0.2)  __intensity = 0.1f;
+	else if(__intensity < 0.4)  __intensity = 0.3f;
+	else if(__intensity < 0.6)  __intensity = 0.5f;
+	else if(__intensity < 0.8)  __intensity = 0.7f;
+	else if(__intensity < 1.0)  __intensity = 0.9f;
+	
+	float gray = 1.0f - __intensity;
+	__color = float4(gray,gray,gray,1.0f);
+	
+	__color = float4(__color.xyzw * _fog_factor + (1 - _fog_factor) * float4(0.0f, 0.0f, 0.0f, 0.0f));
+	
+	return __color;
+}
+
+float getFlag(float4 _pos, float4x4 _view_matrix, float _blendMode_test, float _max_range, float _view_range_r_test, float _view_range_h_test, float _view_range_v_test, float _view_shape_test)
+{
+	//判断lidar形状-start
+	float4 pp = mul(_view_matrix, float4(_pos.xyz, 1.0f));  //pp自建view的变换结构 
+	float dis = length(pp.xyz);  //到传感器的距离
+	
+	float dis2c = length(pp.xy/pp.z);
+	float show_range_q_h = _view_range_h_test * pp.z;
+	float show_range_q_v = _view_range_v_test * pp.z;
+	float flag = 0.0f;
+
+	if(_view_shape_test == 1.0f)
+		if(dis2c < _view_range_r_test && pp.z < 0 && dis < _max_range)
+			flag = 1.0f;
+	if(_view_shape_test == 2.0f)
+		if( pp.x <= -show_range_q_v && pp.x >= show_range_q_v && pp.y <= -show_range_q_h && pp.y >= show_range_q_h && dis < _max_range)
+			flag = 1.0f;
+	//判断lidar形状-end
+	return flag;
+}
+
+float4 getRadarColor(float4 _color, float4 _normal, float4x4 _view_matrix, float4x4 _modelviewIT_matrix)
+{
+	if(_color.a < 0.2)
+		return float4(0,0,0,0);
+
+	float4 normal_eye = mul(_modelviewIT_matrix, float4(_normal.xyz, 0.0f));
+	float anglecos = dot(normalize(normal_eye.xyz), float3(0,0,1));
+	float nangle = acos(anglecos)/3.141592654;
+	float l = (_color.r+_color.g+_color.b)*0.3333333;
+
+	// if(l > 0.2f)
+	// 	l = 1.0f;
+	// else
+	// 	l = 0.1;
+
+	if(nangle < 0.75)
+	{
+		nangle = 1 - nangle*2;
+		return lerp(float4(nangle,nangle,nangle,1.0), l, 0.05f);
+		//return float4(nangle,nangle,nangle,1.0);
+	}
+	else
+		return float4(float3(l, l, l)*0.05, 1.0);
+		//return float4(0.05,0.05,0.05,1.0);
+
+}

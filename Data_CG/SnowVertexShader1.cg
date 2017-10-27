@@ -1,0 +1,37 @@
+struct appin
+{
+    float4 position  : POSITION;
+    float3 normal    : NORMAL;
+    float2 texcoord0 : TEXCOORD0;
+};
+
+struct vout
+{
+	float4 vcolor : COLOR0;
+	float4 position  : POSITION;
+    float2 texcoord0 : TEXCOORD0;
+	float4 fogfactor : TEXCOORD1;
+};
+
+void SnowVertexShader1(in appin IN, out vout OUT, uniform float4x4 modelViewProj,uniform float4x4 modelView,uniform float fog_visibility)
+{
+	float4 tempPosition = float4( IN.position.x, IN.position.y, IN.position.z, 1.0f ); 
+	OUT.position = mul( modelViewProj, tempPosition );
+	
+	float4 mvPosition = mul( modelView, tempPosition );
+	OUT.fogfactor = clamp((fog_visibility - abs(mvPosition.z))/fog_visibility, 0 , 1);
+	
+	float check ;
+	check = dot(IN.normal, float3(0.0f,0.0f,1.0f));
+	
+	if(check > 0.2)
+	{
+		OUT.vcolor = float4(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+	else
+	{
+		OUT.vcolor = float4(1.0f, 1.0f, 1.0f, 0.0f);
+	}
+	
+	OUT.texcoord0 = IN.texcoord0;
+}

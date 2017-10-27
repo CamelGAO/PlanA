@@ -1,0 +1,94 @@
+struct appin
+{
+    float3 position  : POSITION;
+    float3 normal    : NORMAL;
+    float4 color0    : COLOR0;
+    float2 texcoord0 : TEXCOORD0;
+    float2 texcoord1 : TEXCOORD1;
+};
+
+struct vertout
+{
+	float4 position  : POSITION;
+	float4 color0    : COLOR0;
+	float4 colorfactor : COLOR1;
+	float2 texcoord0 : TEXCOORD0;
+	float2 texcoord1 : TEXCOORD1;
+    float3 vposition : TEXCOORD2;
+    float range :  TEXCOORD3; 
+    float4 vcolor :  TEXCOORD4; 
+};
+
+vertout LidarVertexShader2(appin IN,uniform float4x4 modelViewProj,
+								uniform float4x4 modelView,
+								uniform float max_range_test,
+								uniform float scale_test,
+								uniform float4x4 proj : state.matrix.projection,
+								uniform float show_mode_test,
+								uniform float4x4 view_test,
+								uniform float color_mode_test,
+								uniform float fog_visibility)
+{
+	vertout OUT;
+
+	OUT.texcoord0 = IN.texcoord0;	
+	OUT.texcoord1 = 0.45f * IN.texcoord0;
+	OUT.vposition = IN.position;
+
+	//计算是否有积雪-开始
+	float check ;   
+	check = dot(IN.normal, float3(0.0f,0.0f,1.0f));
+	if(check > 0.2)
+	{
+		OUT.colorfactor.a = 1.0f;
+	}
+	else
+	{
+		OUT.colorfactor.a = 0.0f;
+	}
+	//计算是否有积雪-结束
+	
+	float4 tempPosition = float4( IN.position.xyz, 1.0f ); 
+	OUT.position = mul( modelView, tempPosition);
+	OUT.range = length(OUT.position.xyz);
+	
+	OUT.colorfactor.r = clamp((fog_visibility - abs(OUT.position.z))/fog_visibility, 0 , 1);  //计算雾融合的比例
+	
+	if(show_mode_test == 1.0f)
+	{
+		OUT.position = mul( view_test, OUT.position);
+		OUT.position = mul( proj, OUT.position);
+	}
+	else 
+	{
+		OUT.position = mul( modelViewProj, tempPosition);
+	}
+
+	const float section = 100.0f;
+
+    if( OUT.range < max_range_test*2.5 )    //保证地形的显示
+    {
+        if( color_mode_test == 1.0f )  OUT.color0 = float4(0.5f,0.5f,0.5f,1.0f);
+		else if(color_mode_test == 2.0f)  OUT.color0 = float4( 69.0f/255.0f, 129.0f/255.0f, 193.0f/255.0f, 1.0f); //分层着色
+		else if(color_mode_test == 3.0f)  OUT.color0 = float4(110.0f/255.0f, 108.0f/255.0f, 121.0f/255.0f,1.0f);   //地面着灰色	
+		else if(color_mode_test == 4.0f)
+		{
+		    float colorzone = fmod(OUT.range,section);   
+		    if(colorzone < 0.1*section)			OUT.color0 = float4(1.0f, 0.0f, 0.0f, 1.0f);
+			else if(colorzone < 0.2*section)		OUT.color0 = float4(0.8f, 0.2f, 0.0f, 1.0f);
+			else if(colorzone < 0.3*section)		OUT.color0 = float4(0.6f, 0.4f, 0.0f, 1.0f);
+			else if(colorzone < 0.4*section)		OUT.color0 = float4(0.4f, 0.6f, 0.0f, 1.0f);
+			else if(colorzone < 0.5*section)		OUT.color0 = float4(0.2f, 0.8f, 0.0f, 1.0f);				
+			else if(colorzone < 0.6*section)		OUT.color0 = float4(0.0f, 0.8f, 0.2f, 1.0f);
+			else if(colorzone < 0.7*section)		OUT.color0 = float4(0.0f, 0.6f, 0.4f, 1.0f);
+			else if(colorzone < 0.8*section)		OUT.color0 = float4(0.0f, 0.4f, 0.6f, 1.0f);
+			else if(colorzone < 0.9*section)		OUT.color0 = float4(0.0f, 0.2f, 0.8f, 1.0f);
+			else OUT.color0 = float4(0.0f, 0.0f, 1.0f, 1.0f);	    
+		}			
+	}
+
+    OUT.vcolor = OUT.color0;
+	
+   return OUT;
+}
+

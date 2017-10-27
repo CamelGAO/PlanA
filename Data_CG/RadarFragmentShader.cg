@@ -1,0 +1,19 @@
+struct pixout
+{
+	float4 color : COLOR;
+};
+
+pixout RadarFragmentShader(float4 color0 : COLOR0, float2 texcoord0 : TEXCOORD0,uniform sampler2D decal,
+						   float3 vposition : TEXCOORD2,float range : TEXCOORD3,float4 vcolor : TEXCOORD4)
+{
+	pixout OUT;
+
+	float4 color = tex2D(decal, texcoord0);
+	float intensity = (color.r +  color.g +  color.b)/3;
+	float4 graycolor = float4(intensity,intensity,intensity,1.0f);
+
+	OUT.color = lerp(graycolor,vcolor,0.95f);
+	if( 0==color.a )  OUT.color = float4(OUT.color.rgb,0.0f);
+
+	return OUT;
+}

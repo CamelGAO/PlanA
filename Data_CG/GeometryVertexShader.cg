@@ -1,0 +1,179 @@
+
+struct appin
+{
+    float3 position  : POSITION;
+    float3 normal    : NORMAL;
+    float4 color0    : COLOR0;
+    float2 texcoord0 : TEXCOORD0;
+    float3 texcoord1 : TEXCOORD1;
+	float3 controlflag : TEXCOORD2;
+};
+
+struct vertout
+{
+	float4 position  : POSITION;
+	float4 color0    : COLOR0;
+	float4 colorfactor : COLOR1;
+	float2 texcoord0 : TEXCOORD0;
+	float2 texcoord1 : TEXCOORD1;
+
+    float4 vcolor_lidar :  TEXCOORD4;
+	float4 vcolor_radar	: TEXCOORD5;
+	float4 normal : TEXCOORD6;
+    float3 vposition : TEXCOORD7;
+};
+
+float getFlag(float4 _pos, float4x4 _view_matrix, float _blendMode_test, float _max_range, float _view_range_r_test, float _view_range_h_test, float _view_range_v_test, float _view_shape_test);
+
+vertout GeometryVertecShader(   appin IN,uniform float4x4 modelViewProj,
+								uniform float4x4 modelView,
+								uniform float max_range_lidar_test,
+								uniform float max_range_radar_test,
+								uniform float scale_test,
+								uniform float4x4 proj : state.matrix.projection,
+								uniform float lidar_color_mode_test,
+								uniform float radar_color_mode_test,
+								uniform float fog_visibility,
+								uniform float blendMode_test,
+
+								uniform float4x4 view_radar_test,
+								uniform float radar_view_range_r_test,
+								uniform float radar_view_range_h_test, 
+								uniform float radar_view_range_v_test,
+								uniform float radar_view_shape_test
+								)
+{
+	vertout OUT;
+
+	float4 temp_color;
+	float3 modify_vector = IN.texcoord1;
+
+	OUT.texcoord0 = IN.texcoord0;
+	OUT.texcoord1 = scale_test * 10.0f * 5.0f * IN.texcoord0;
+	OUT.vposition = IN.position;
+	OUT.normal = float4(IN.normal, 0.0f);
+
+	//计算是否有积雪-开始
+	float check;
+	IN.normal = normalize(IN.normal);
+	check = dot(IN.normal, float3(0.0f,0.0f,1.0f));
+	if(check > 0.2)
+	{
+		OUT.colorfactor.a = 1.0f;
+	}
+	else
+	{
+		OUT.colorfactor.a = 0.0f;
+	}
+	//计算是否有积雪-结束
+
+	float4 tempPosition = float4( IN.position, 1.0f ); 
+	OUT.position = mul( modelView, tempPosition);
+	float range = length(OUT.position.xyz);
+	OUT.colorfactor.r = clamp((fog_visibility - abs(OUT.position.z))/fog_visibility, 0 , 1);  //计算雾融合的比例
+
+	//判断radar形状-start
+	float flag_radar = getFlag(	OUT.position, 
+								view_radar_test, 
+								blendMode_test, 
+								max_range_radar_test, 
+								radar_view_range_r_test, 
+								radar_view_range_h_test, 
+								radar_view_range_v_test, 
+								radar_view_shape_test);
+	//判断radar形状-end
+
+	if(flag_radar >= 0.9f)     
+	{
+		OUT.position = mul( modelViewProj, float4( modify_vector, 1.0f ));
+	}
+	else
+	{
+		OUT.position = mul( modelViewProj, tempPosition);
+	}
+
+
+
+
+	const float section = max_range_lidar_test;
+
+    if( range < max_range_lidar_test)    //保证地形的显示
+    {
+        if( lidar_color_mode_test == 1.0f )  temp_color = float4(0.5f,0.5f,0.5f,1.0f);
+		else if(lidar_color_mode_test == 2.0f)  temp_color = float4( 69.0f/255.0f, 129.0f/255.0f, 193.0f/255.0f, 1.0f); //分层着色
+		else if(lidar_color_mode_test == 3.0f)  
+		{
+			float colorzone = range/(max_range_lidar_test)*2;
+			if(colorzone < 1)
+				temp_color = float4(1.0f - colorzone, colorzone, 0.0f, 1.0f);
+			else
+				temp_color = float4(0.0f, 2 - colorzone, colorzone - 1.0f, 1.0f);
+		}
+		else if(lidar_color_mode_test == 4.0f)
+		{
+			float colorzone = fmod(range,section);
+			if(colorzone < 0.1*section)			temp_color = float4(1.0f, 0.0f, 0.0f, 1.0f);
+			else if(colorzone < 0.2*section)		temp_color = float4(0.8f, 0.2f, 0.0f, 1.0f);
+			else if(colorzone < 0.3*section)		temp_color = float4(0.6f, 0.4f, 0.0f, 1.0f);
+			else if(colorzone < 0.4*section)		temp_color = float4(0.4f, 0.6f, 0.0f, 1.0f);
+			else if(colorzone < 0.5*section)		temp_color = float4(0.2f, 0.8f, 0.0f, 1.0f);				
+			else if(colorzone < 0.6*section)		temp_color = float4(0.0f, 0.8f, 0.2f, 1.0f);
+			else if(colorzone < 0.7*section)		temp_color = float4(0.0f, 0.6f, 0.4f, 1.0f);
+			else if(colorzone < 0.8*section)		temp_color = float4(0.0f, 0.4f, 0.6f, 1.0f);
+			else if(colorzone < 0.9*section)		temp_color = float4(0.0f, 0.2f, 0.8f, 1.0f);
+			else temp_color = float4(0.0f, 0.0f, 1.0f, 1.0f);
+		}
+		if(range < max_range_lidar_test*0.6)
+			temp_color = float4(1, 0, 0, 1.0f);	
+	}
+    OUT.vcolor_lidar = temp_color;//float4(modify_vector, 1.0f);
+
+	//check = 1 - check;
+    if( range < max_range_radar_test)    //保证地形的显示
+    {
+		if(radar_color_mode_test == 1.0f)  //分层着色
+		{
+			if( check < 0.05f) temp_color = float4(219.0f/255.0f,182.0f/255.0f,81.0f/255.0f,1.0f);
+			else if( check < 0.15f )  temp_color = float4(108.0f/255.0f,135.0f/255.0f,132.0f/255.0f,1.0f);
+			else if( check < 0.5f ) temp_color = float4(219.0f/255.0f,182.0f/255.0f,81.0f/255.0f,1.0f);
+			else if( check < 0.9f ) temp_color = float4(176.0f/255.0f,140.0f/255.0f,67.0f/255.0f,1.0f);
+			else temp_color = float4(132.0f/255.0f,98.0f/255.0f,53.0f/255.0f,1.0f);
+		}
+		else 
+			if(radar_color_mode_test == 2.0f)  temp_color = float4(0.35f, 0.27f, 0.16f, 1.0f);	
+	}
+    OUT.vcolor_radar = temp_color;
+
+	if(IN.controlflag.r == 1.0f) 
+	{
+		OUT.color0 = float4(0,0,0,0);
+	}
+	else
+		OUT.color0 = IN.color0;
+
+   return OUT;
+}
+
+float getFlag(float4 _pos, float4x4 _view_matrix, float _blendMode_test, float _max_range, float _view_range_r_test, float _view_range_h_test, float _view_range_v_test, float _view_shape_test)
+{
+	//判断lidar形状-start
+	float4 pp = mul(_view_matrix, float4(_pos.xyz, 1.0f));  //pp自建view的变换结构 
+	float dis = length(pp.xyz);  //到传感器的距离
+	
+	float dis2c = length(pp.xy/pp.z);
+	float show_range_q_h = _view_range_h_test * pp.z;
+	float show_range_q_v = _view_range_v_test * pp.z;
+	float flag = 0.0f;
+
+	if(_blendMode_test <= 4.0f || _blendMode_test >= 9.0f)
+		return flag;
+
+	if(_view_shape_test == 1.0f)
+		if(dis2c < _view_range_r_test && pp.z < 0 && dis < _max_range)
+			flag = 1.0f;
+	if(_view_shape_test == 2.0f)
+		if( pp.x <= -show_range_q_v && pp.x >= show_range_q_v && pp.y <= -show_range_q_h && pp.y >= show_range_q_h && dis < _max_range)
+			flag = 1.0f;
+	//判断lidar形状-end
+	return flag;
+}

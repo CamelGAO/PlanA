@@ -1,0 +1,220 @@
+
+struct fout
+{
+	float4 color : COLOR;
+};
+
+struct fin
+{
+	float4 colorfactor : COLOR1;
+};
+
+
+
+float4 getIrColor(float4 _color, float _fog_factor, float _accsnow_factor, float _accsnow_flag);
+float getFlag(float4 _pos, float4x4 _view_matrix, float _blendMode_test, float _max_range, float _view_range_r_test, float _view_range_h_test, float _view_range_v_test, float _view_shape_test);
+
+fout SensorFragmentShader1(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vposition : TEXCOORD2, float4 vcolor_lidar : TEXCOORD4, float2 texcoord1 : TEXCOORD1,
+							uniform sampler2D decal,
+							uniform sampler2D tex2 : TEXUNIT2,
+							uniform float4x4 modelView,
+							uniform float4x4 proj : state.matrix.projection,
+							uniform sampler2D tex1 : TEXUNIT1,
+
+							uniform float max_range_lidar_test,
+							uniform float max_range_radar_test,
+							uniform float max_range_ir_test,
+
+							uniform float4x4 view_lidar_test,
+							uniform float4x4 view_radar_test,
+							uniform float4x4 view_ir_test,
+
+							uniform float view_range_r_test,
+							uniform float view_range_h_test, 
+							uniform float view_range_v_test,
+							uniform float view_shape_test,
+
+							uniform float blendMode_test,
+
+							uniform float density, //积雪强度
+
+							uniform float offset_test,
+							uniform float sampling_rate_test)
+{
+	fout OUT;
+
+	float4 color1 = tex2D(decal, texcoord0);
+
+	
+	float4 tempPosition = float4( vposition.x, vposition.y, vposition.z, 1.0f);
+	float4 position = mul(modelView, tempPosition);
+
+	//判断lidar形状-start
+	float flag_lidar = getFlag(	position, 
+								view_lidar_test, 
+								blendMode_test, 
+								max_range_lidar_test, 
+								view_range_r_test, 
+								view_range_h_test, 
+								view_range_v_test, 
+								view_shape_test);
+	//判断lidar形状-end
+	
+	//判断radar形状-start
+	float flag_radar = getFlag(	position, 
+								view_radar_test, 
+								blendMode_test, 
+								max_range_radar_test, 
+								view_range_r_test, 
+								view_range_h_test, 
+								view_range_v_test, 
+								view_shape_test);
+	//判断radar形状-end
+	
+	//判断ir形状-start
+	float flag_ir = getFlag(	position, 
+								view_ir_test, 
+								blendMode_test, 
+								max_range_ir_test, 
+								view_range_r_test, 
+								view_range_h_test, 
+								view_range_v_test, 
+								view_shape_test);
+	//判断ir形状-end
+
+	//确定是否显示激光雷达点-start
+	float4 colorlidar;
+	float4 pp_lidar = mul(view_lidar_test, float4(position.xyz, 1.0f));  //pp自建view的变换结构
+	float distance_lidar = length(pp_lidar.xyz);  //到传感器的距离
+	if(flag_lidar == 1.0f)
+	{
+		float4 ppp = mul(proj, pp_lidar);  //pp经过投影的得到ppp
+		float2 ppp_s = ppp.xy/ppp.w;
+		
+		float lidar_image_s = (ppp_s.x + 1.0f) * 0.5 * 0.2 + offset_test;
+		float lidar_image_t = (ppp_s.y + 1.0f) * 0.5 * 0.2 + offset_test;
+		colorlidar = tex2D(tex1, float2(lidar_image_s,lidar_image_t));
+	}
+	else
+	{
+		colorlidar = float4(0, 0, 0, 0);
+	}
+	float flag_a = colorlidar.a > (distance_lidar / max_range_lidar_test * sampling_rate_test + (1 - sampling_rate_test)) ? 1.0f : 0.0f;
+	//float flag_a = colorlidar.a > (range/(max_range_test * 2.5f)) ? 1.0f : 0.0f;
+	//确定是否显示激光雷达点-end
+	
+	if(blendMode_test == 1.0f)  //全局Lidar
+	{
+		if(flag_lidar == 1.0f && flag_a == 1.0f)
+			OUT.color = float4(vcolor_lidar.xyz, 1.0f);   //真彩色模式除外
+		else
+			OUT.color = float4(0.0f,0.0f,0.0f,1.0f); 
+	}
+	else if(blendMode_test == 4.0f)  //局部Lidar
+	{
+		if(flag_lidar == 1.0f && flag_a == 1.0f)   
+			OUT.color = float4(vcolor_lidar.xyz, 1.0f);   //激光雷达
+		else
+			OUT.color = float4(0.0f, 0.0f, 0.0f, 1.0f); 
+	}
+	else if(blendMode_test == 7.0f)  //局部Ir
+	{
+		if(flag_ir == 1.0f)   
+			OUT.color = getIrColor(color1, IN.colorfactor.r, density, IN.colorfactor.a);   //激光雷达
+		else 		
+			OUT.color = float4(0.0f, 0.0f, 0.0f, 1.0f); 
+	}
+	else if(blendMode_test == 2.0f)  //全局lidar与数据库融合
+	{
+		if(flag_lidar == 1.0f && flag_a ==1.0f)   
+			OUT.color = float4(vcolor_lidar.xyz, 1.0f);   //激光雷达
+		else 		//数据库 
+			OUT.color =  float4(color1.xyz, 0.0f); 
+	}
+	else if(blendMode_test == 3.0f)  //全局lidar与红外融合
+	{
+		if(flag_lidar == 1.0f && flag_a ==1.0f)   
+			OUT.color = float4(vcolor_lidar.xyz, 1.0)f;   //激光雷达
+		else 		//红外
+		{
+			OUT.color = getIrColor(color1, IN.colorfactor.r, density, IN.colorfactor.a);
+		}
+	}
+	else if(blendMode_test == 5.0f)  //局部lidar与数据库融合
+	{
+		if(flag_lidar == 1.0f && flag_a ==1.0f)   
+			OUT.color = float4(vcolor_lidar.xyz, 1.0f);   //激光雷达
+		else 		//数据库 
+			OUT.color =  float4(color1.xyz, 1.0f); 
+	}
+	else if(blendMode_test == 6.0f)  //局部lidar与红外融合
+	{
+		if(flag_lidar == 1.0f && flag_a ==1.0f)
+			OUT.color = float4(vcolor_lidar.xyz, 1.0f);   //激光雷达
+		else 		//红外
+		{
+			OUT.color = getIrColor(color1, IN.colorfactor.r, density, IN.colorfactor.a);
+		} 
+	}
+	else if(blendMode_test == 8.0f) //毫米波雷达效果
+	{
+		if(flag_radar == 1.0f)
+			OUT.color = getIrColor(color1, IN.colorfactor.r, density, IN.colorfactor.a);   //激光雷达
+		else
+			OUT.color = float4(0.0f, 0.0f, 0.0f, 1.0f);
+	}
+		
+	return OUT;
+}
+
+float4 getIrColor(float4 _color, float _fog_factor, float _accsnow_factor, float _accsnow_flag)
+{
+	float4 __color = _color;
+	float __intensity;
+	float __temp = 0.0f;   //指定材质范围的温度
+	
+	if(_accsnow_flag >= 0.9f)
+	{
+		__intensity = (__color.r + __color.g + __color.b) * 0.333333f;
+		__color = float4(lerp(float3(__color.r,__color.g,__color.b),float3(1.0f, 1.0f, 1.0f),__intensity * _accsnow_factor), 1.0f);
+	}
+	
+	__intensity = clamp(0.299*__color.r + 0.587*__color.g + 0.114*__color.b, 0, 1);
+	//__intensity = clamp(0.333333*__color.r + 0.333333*__color.g + 0.333333*__color.b, 0, 1);
+	
+	if(__intensity < 0.2)  __intensity = 0.1f;
+	else if(__intensity < 0.4)  __intensity = 0.3f;
+	else if(__intensity < 0.6)  __intensity = 0.5f;
+	else if(__intensity < 0.8)  __intensity = 0.7f;
+	else if(__intensity < 1.0)  __intensity = 0.9f;
+	
+	float gray = 1.0f - __intensity;
+	__color = float4(gray,gray,gray,1.0f);
+	
+	__color = float4(__color.xyz * _fog_factor + (1 - _fog_factor) * float3(0.15f, 0.15f, 0.15f), 1.0f);
+	
+	return __color;
+}
+
+float getFlag(float4 _pos, float4x4 _view_matrix, float _blendMode_test, float _max_range, float _view_range_r_test, float _view_range_h_test, float _view_range_v_test, float _view_shape_test)
+{
+	//判断lidar形状-start
+	float4 pp = mul(_view_matrix, float4(_pos.xyz, 1.0f));  //pp自建view的变换结构 
+	float dis = length(pp.xyz);  //到传感器的距离
+	
+	float dis2c = length(pp.xy/pp.z);
+	float show_range_q_h = _view_range_h_test * pp.z;
+	float show_range_q_v = _view_range_v_test * pp.z;
+	float flag = 0.0f;
+	if((_blendMode_test == 1.0f || _blendMode_test == 2.0f || _blendMode_test == 3.0f))
+		if(dis<_max_range)
+			flag = 1.0f;
+	if(_view_shape_test == 1.0f && (_blendMode_test == 4.0f || _blendMode_test == 5.0f || _blendMode_test == 6.0f || _blendMode_test == 7.0f))
+		if(dis2c < _view_range_r_test && pp.z < 0 && dis < _max_range)
+			flag = 1.0f;
+	if(_view_shape_test == 2.0f && (_blendMode_test == 4.0f || _blendMode_test == 5.0f || _blendMode_test == 6.0f || _blendMode_test == 7.0f))
+		if( pp.x <= -show_range_q_v && pp.x >= show_range_q_v && pp.y <= -show_range_q_h && pp.y >= show_range_q_h && dis < _max_range)
+			flag = 1.0f;
+	//判断lidar形状-end
+	return flag;
+}
