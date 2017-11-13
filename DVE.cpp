@@ -22,9 +22,19 @@ classDve::classDve(const char* _name, vsChannel::Subscriber *_subscriber):classB
 
 	isMoveEnable = pObserver->getStrategyEnable();
 
-	pGLSComponent = vpGLStudioComponent::find("myGLStudioComponent");
-	if (pGLSComponent == NULL) {std::cout << "DVE: pGLSComponent is NULL!" << std::endl;system("pause");}
-	else pGLSComponent->ref();
+	pPanelInfo = pPanel->getPanel("DvePanel");   //ªÒ»°dve√Ê∞Â
+	if (pPanelInfo == NULL) 
+	{
+		std::cout << "DVE: pPanelInfo is NULL!" << std::endl;
+		system("pause");
+	}
+	else 
+	{
+		pGLSComponent = pPanelInfo->_component;
+		if(pGLSComponent == NULL) {std::cout << "DVE: pGLSComponent is NULL!" << std::endl;system("pause");}
+		else pGLSComponent->ref();
+	}
+
 
 	addEvent(vsChannel::EVENT_POST_DRAW);
 
@@ -74,7 +84,7 @@ void classDve::updateData(void)
 	if(temp != last_rainLevel)
 	{
 		envInfo.rainLevel = last_rainLevel = temp;
-		enableDve(Rain);
+		enableDve(classEnvInfo::Rain);
 		printf("rain:%f\n", envInfo.rainLevel);
 		return;
 	}
@@ -87,7 +97,7 @@ void classDve::updateData(void)
 	if(temp != last_snowLevel)
 	{
 		envInfo.snowLevel = last_snowLevel = temp;
-		enableDve(Snow);
+		enableDve(classEnvInfo::Snow);
 		printf("snow:%f\n", envInfo.snowLevel);
 		return;
 	}
@@ -101,7 +111,7 @@ void classDve::updateData(void)
 	{
 		envInfo.fogVisibility = last_fogLevel = temp;
 		envInfo.fogColor = 1.0f;
-		enableDve(Fog);
+		enableDve(classEnvInfo::Fog);
 		printf("fog:%f %f\n", envInfo.fogVisibility, envInfo.fogColor);
 		return;
 	}
@@ -113,7 +123,7 @@ void classDve::updateData(void)
 	if(temp != last_dustLevel)
 	{
 		envInfo.dustDensity = last_dustLevel = temp;
-		enableDve(Dust);
+		enableDve(classEnvInfo::Dust);
 		printf("dust:%f\n", envInfo.dustDensity);
 		return;
 	}
@@ -127,7 +137,7 @@ void classDve::updateData(void)
 	{
 		envInfo.fogVisibility = last_sandLevel = temp;
 		envInfo.fogColor = 0.0f;
-		enableDve(Sandstorm);
+		enableDve(classEnvInfo::Sandstorm);
 		printf("Sandstorm:%f %f\n", envInfo.fogVisibility, envInfo.fogColor);
 		return;
 	}
@@ -140,7 +150,7 @@ void classDve::updateData(void)
 	if(temp != last_snowaccLevel)
 	{
 		envInfo.accDensity = last_snowaccLevel = temp;
-		enableDve(AccSnow);
+		enableDve(classEnvInfo::AccSnow);
 		printf("AccSnow:%f\n", envInfo.accDensity);
 		return;
 	}
@@ -152,21 +162,21 @@ void classDve::updateData(void)
 	if(temp != last_time)
 	{
 		envInfo.time = last_time = temp;
-		enableDve(Time);
+		enableDve(classEnvInfo::Time);
 		printf("time:%f\n", envInfo.time);
 		return;
 	}
 
 }
 
-void classDve::deleteDveObject(enumDve _dve)
+void classDve::deleteDveObject(classEnvInfo::enumDve _dve)
 {
 	switch (_dve)
 	{
-	case Nothing:
+	case classEnvInfo::Nothing:
 		break;
 
-	case AccSnow:
+	case classEnvInfo::AccSnow:
 		if(pAccSnow != NULL)
 		{
 			delete pAccSnow;
@@ -176,7 +186,7 @@ void classDve::deleteDveObject(enumDve _dve)
 			std::cout << "DVE.cpp: delete DveObject(pAccSnow) error!"<< std::endl;
 		break;
 
-	case Rain:
+	case classEnvInfo::Rain:
 		if(pRain != NULL)
 		{
 			delete pRain;
@@ -186,7 +196,7 @@ void classDve::deleteDveObject(enumDve _dve)
 			std::cout << "DVE.cpp: delete DveObject(pRain) error!"<< std::endl;
 		break;
 
-	case Snow:
+	case classEnvInfo::Snow:
 		if(pSnow != NULL)
 		{
 			delete pSnow;
@@ -196,7 +206,7 @@ void classDve::deleteDveObject(enumDve _dve)
 			std::cout << "DVE.cpp: delete DveObject(pSnow) error!"<< std::endl;
 		break;
 
-	case Dust:
+	case classEnvInfo::Dust:
 		if(pDust != NULL)
 		{
 			delete pDust;
@@ -212,32 +222,32 @@ void classDve::deleteDveObject(enumDve _dve)
 	}
 }
 
-void classDve::enableDve(enumDve _dve)
+void classDve::enableDve(classEnvInfo::enumDve _dve)
 {
 	switch (_dve)
 	{
-	case Nothing:
+	case classEnvInfo::Nothing:
 		break;
 
-	case Fog:
+	case classEnvInfo::Fog:
 		pFog->setVisibility(envInfo.fogVisibility == 0 ? 80000 : (19-envInfo.fogVisibility)*300);
 		pFog->setColor(envInfo.fogColor);
 		break;
 
-	case Sandstorm:
+	case classEnvInfo::Sandstorm:
 		pFog->setVisibility(envInfo.fogVisibility == 0 ? (envInfo.fogColor = 1.0f, 80000) : (19-envInfo.fogVisibility)*300);
 		pFog->setColor(envInfo.fogColor);
 		break;
 
-	case Time:
+	case classEnvInfo::Time:
 		pTime->setTime(envInfo.time);
 		break;
 
-	case Dust:
+	case classEnvInfo::Dust:
 		pDust->setDensity(envInfo.dustDensity);
 		break;
 
-	case Rain:
+	case classEnvInfo::Rain:
 		if(envInfo.rainLevel == 0 )
 			pRain->setRainLevel(classRain::GREEN);
 		else if(envInfo.rainLevel < 3)
@@ -251,7 +261,7 @@ void classDve::enableDve(enumDve _dve)
 
 		break;
 
-	case Snow:
+	case classEnvInfo::Snow:
 		if(envInfo.snowLevel == 0 )
 			pSnow->setSnowLevel(classSnow::GREEN);
 		else if(envInfo.snowLevel < 3)
@@ -265,7 +275,7 @@ void classDve::enableDve(enumDve _dve)
 
 		break;
 
-	case AccSnow:
+	case classEnvInfo::AccSnow:
 		pAccSnow->setDensity( calculateAccSnowDensity(envInfo.accDensity) );
 		break;
 	}
@@ -294,42 +304,6 @@ void classDve::handleRunLoop(void)
 
 		isStartFound = false;
 	}
-}
-
-void classDve::loadPanel(void)
-{
-	pGLSComponent = new vpGLStudioComponent();
-	pGLSComponent->setName( "myGLStudioComponent" );
-	pGLSComponent->setCullMask( 0x0FFFFFFFF );
-	pGLSComponent->setRenderMask( 0x0FFFFFFFF );
-	pGLSComponent->setIsectMask( 0x0FFFFFFFF );
-	pGLSComponent->setStrategyEnable( true );
-	pGLSComponent->setTranslate( 0.350000 ,  0.300000 ,  0.000000 );
-	pGLSComponent->setRotate( 0.000000 ,  0.000000 ,  0.000000 );
-	pGLSComponent->setScale( 0.400000 ,  0.400000 ,  1.000000 );
-	pGLSComponent->setStaticEnable( false );
-	pGLSComponent->setDLLName( "DvePanel.dll" );
-	pGLSComponent->setClassName( "DvePanelClass" );
-	pGLSComponent->dumpClassResourceNames( false );
-	pGLSComponent->setGeoRef( -81.224015 ,  28.601826 ,  0.000000 );
-
-	pGLSComponent->addChannel(pChannel);
-}
-
-void classDve::removePanel(void)
-{
-	if (pGLSComponent != NULL)
-	{
-		vpChannel *__channel;
-		if((__channel = pGLSComponent->getChannel(0)) != NULL)
-			pGLSComponent->removeChannel(__channel);
-		else
-			std::cout << "classDve:removePanel():The panel to be removed had not been add to any channel!" << std::endl;
-
-		pGLSComponent->unref();
-	}
-	else
-		std::cout << "classDve:removePanel():NULL pointer!" << std::endl;
 }
 
 float classDve::calculateAccSnowDensity(float _in)

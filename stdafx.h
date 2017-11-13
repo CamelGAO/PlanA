@@ -14,6 +14,7 @@
 #include <afxdlgs.h>  
 #include <windows.h>  
 #include <limits.h>
+#include <process.h> 
 
 
 #include <cstring>
@@ -61,6 +62,7 @@
 #include "vuString.h"
 #include "vuAllocTracer.h"
 #include "vsgu.h"
+#include "vsRepresentation.h"
 
 #include <gl/GLAux.h>
 #include <gl/glut.h>

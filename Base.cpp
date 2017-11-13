@@ -26,23 +26,18 @@ classBase::classBase(vpObserver *_observer, vsChannel::Subscriber *_subscriber, 
 
 void classBase::init(vpObserver *_observer, vsChannel::Subscriber *_subscriber, size_t _mask, bool _isShowFound, const char * _object_name)            //场景中的信息在这个函数里提取    必须在pObserver初始化之后调用
 {
-	if((pObserver = _observer) == NULL)
-	{
-		std::cout << "pObserver is NULL!" << std::endl;
-		system("pause");
-	}
-	else
-		pObserver->ref();
-
 	pSubscriber = _subscriber;
+	addTraversal(_mask);			//这两句将本对象加入了遍历列表
 
-	pStart1 = NULL;
+	pStart1 = NULL;      //节点初始化为NULL，并将found标志置false
 	pStart2 = NULL;
-	pTerrain = NULL;												//节点初始化为NULL，并将found标志置false
+	pTerrain = NULL;												
 	pBuilding = NULL;
 	pCar = NULL;
 	pPowerLine = NULL;
 	pTree = NULL;
+	pGrass = NULL;
+	pStone = NULL;
 
 	isStartFound = false;
 	isTerrainFound = false;
@@ -50,16 +45,24 @@ void classBase::init(vpObserver *_observer, vsChannel::Subscriber *_subscriber, 
 	isCarFound = false;
 	isPowerLineFound = false;
 	isTreeFound = false;
-
-	index = classDrawer<vpObserver *>::add(pObserver);    //将observer保存起来
-	
-	addTraversal(_mask);												//这两句将本对象加入了遍历列表
+	isGrassFound = false;
+	isStoneFound = false;
 
 	pShaderDeployer = classShaderDeployer::instance();
+	pPanel = classPanel::instance();
 
 	pSearchPath = vpSearchPath::find("mySearchPath");
 	if (pSearchPath == NULL) {std::cout << "pSearchPath is NULL!" << std::endl;system("pause");}
 	else pSearchPath->ref();
+
+	if((pObserver = _observer) == NULL)       //如果pObserver为null，则表明继承了这个基类的派生类不需要相关信息，如classPanel，这个类只使用了遍历，不需要节点信息
+	{
+		std::cout << "pObserver is NULL! Automatically ignore node information!" << std::endl;
+		//system("pause");
+		return;
+	}
+	else
+		pObserver->ref();
 
 	pChannel = pObserver->getChannel(0);
 	if (pChannel == NULL) {std::cout << "pChannel is NULL!" << std::endl;system("pause");}
@@ -116,7 +119,7 @@ void classBase::init(vpObserver *_observer, vsChannel::Subscriber *_subscriber, 
 		pPowerLine->ref();
 		isPowerLineFound = true;
 		if (isShowFound)
-			std::cout << "powerline is found!" << std::endl;
+			std::cout << "Powerline is found!" << std::endl;
 	}
 
 	pCar = pObject->find_named("car");
@@ -137,11 +140,28 @@ void classBase::init(vpObserver *_observer, vsChannel::Subscriber *_subscriber, 
 			std::cout << "Tree is found!" << std::endl;
 	}
 
+	pGrass = pObject->find_named("grass");
+	if (pGrass != NULL)
+	{
+		pGrass->ref();
+		isGrassFound = true;
+		if (isShowFound)
+			std::cout << "Grass is found!" << std::endl;
+	}
+
+	pStone = pObject->find_named("stone");
+	if (pStone != NULL)
+	{
+		pStone->ref();
+		isStoneFound = true;
+		if (isShowFound)
+			std::cout << "Stone is found!" << std::endl;
+	}
+
 }
 
 classBase::~classBase() 
 {
-	classDrawer<vpObserver *>::erase(index);
 	removeTraversal(traversalMask);
 
 	if(pSearchPath != NULL) pSearchPath->unref();
@@ -155,6 +175,7 @@ classBase::~classBase()
 	if(pBuilding!=NULL) pBuilding->unref();
 	if(pCar!=NULL) pCar->unref();
 	if(pTree!=NULL) pTree->unref();
+	if(pGrass!=NULL) pGrass->unref();
 	if(pPowerLine!=NULL) pPowerLine->unref();
 	if(pStart1!=NULL) pStart1->unref();
 	if(pStart2!=NULL) pStart2->unref();

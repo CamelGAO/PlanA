@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "Drawer.h"
 #include "ShaderDeployer.h"
+#include "Panel.h"
 
 #define ENABLE_KEY			0x00000001
 #define ENABLE_CULLEVENT	0x00000002
@@ -72,6 +73,8 @@ protected:
 	vsNode *					pCar;
 	vsNode *					pPowerLine;
 	vsNode *					pTree;
+	vsNode *					pGrass;
+	vsNode *					pStone;
 
 	bool						isShowFound;
 	bool						isStartFound;
@@ -80,9 +83,11 @@ protected:
 	bool						isCarFound;
 	bool						isPowerLineFound;
 	bool						isTreeFound;
-
+	bool						isGrassFound;
+	bool						isStoneFound;
 
 	classShaderDeployer *		pShaderDeployer;
+	classPanel*					pPanel;
 
 	size_t						index;				//用于记录本对象在遍历列表中的索引
 	size_t						index_key;
@@ -104,6 +109,8 @@ private:
 
 	static std::map<std::string, EventRefCount> data_eventRefCount;
 };
+
+
 
 
 #endif

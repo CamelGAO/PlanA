@@ -6,6 +6,7 @@
 #include "ModelDeployer.h"
 #include "Sensor.h"
 #include "Geometry.h"
+#include "Panel.h"
 
 //vuAllocTracer tracer;
 
@@ -23,21 +24,9 @@ public:
 
 	~myApp()
 	{
-		if (pDve != NULL)
-		{
-			delete pDve;
-			pDve = NULL;
-		}
-		if (pSensor != NULL)
-		{
-			delete pSensor;
-			pSensor = NULL;
-		}
-		if (pGeometry != NULL)
-		{
-			delete pGeometry;
-			pGeometry = NULL;
-		}
+		if (pDve != NULL) {delete pDve;pDve = NULL;}
+		if (pSensor != NULL) {delete pSensor;pSensor = NULL;}
+		if (pGeometry != NULL) {delete pGeometry;pGeometry = NULL;}
 	}
 
 	virtual int configure(void)
@@ -52,9 +41,9 @@ public:
 		}
 		else
 		{
-			classShaderDeployer::instance()->loadAllShader();
-
-			pDve = new classDve("myObserver",this);
+			classPanel::instance()->init("myWindow");
+			classShaderDeployer::instance()->init();
+			pDve = new classDve("ccdObserver",this);
 			pSensor = new classSensor("sensorObserver",this);
 			pGeometry = new classGeometry("sensorObserver",this);
 		}
@@ -64,7 +53,11 @@ public:
 
 	virtual int unconfigure(void)
 	{
+
+		classPanel::instance()->removeAllPanel(); //vpApp::unconfigure()会调用glstudio模块中的unconfigure， 所以要放在前面
+
 		int ret = vpApp::unconfigure();
+
 		removeModel();
 
 		classShaderDeployer::instance()->removeAllShader();
@@ -122,9 +115,7 @@ public:
 protected:
 private:
 	classDve *pDve;
-
 	classSensor *pSensor;
-
 	classGeometry* pGeometry;
 
 	bool isLoaded;  //true 模型已经加载 false 模型加载被取消
@@ -142,6 +133,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 		// initialize Vega Prime
 		vp::initialize(argc, argv);
+	    vpModule::initializeModule( "vpGLStudio" );
 		vrUserGeometry::initializeClass();   //这个必须要执行，否则s_classtype为NULL，同时必须有配套的shutdownClass()方法配套
 
  		// create my app instance
@@ -179,6 +171,12 @@ bool myApp::loadModel(void)
 	static char __file_name[MAX_PATH];
 
 	vpScene *__scene = vpScene::find("myScene");
+	if (__scene == NULL)
+	{
+		std::cout <<  "load new model : Need \"myScene\" in .acf!" << std::endl;
+		system("pause");
+		return false;
+	}
 
 	if (getPath(__full_name) > 0)
 	{
@@ -192,7 +190,7 @@ bool myApp::loadModel(void)
 
 	vpObject * _object = vpObject::find("myObject");
 	if (_object != NULL)
-	{std::cout <<  "load new model : last model is still existing!" << std::endl;system("pause");}
+	{std::cout <<  "load new model() : last mode is still existing!" << std::endl;system("pause");}
 
 	_object = new vpObject();
 	_object->setName( "myObject" );

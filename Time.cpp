@@ -6,7 +6,7 @@ float classTime::timeFactor[13] = {0.172549,0.121569,0.25,0.603922,0.811765,0.94
 
 classTime::classTime(vpObserver *_observer, vsChannel::Subscriber *_subscriber):classBase(_observer,_subscriber,ENABLE_KEY)
 {
-	shader_time = vuParameter::obtain< vuParameterTyped<float> >("timefactor");
+	shader_time = vuParameter::obtain< vuParameterTyped<float> >("time_factor");
 	setTime(12);
 }
 

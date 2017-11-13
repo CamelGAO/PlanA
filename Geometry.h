@@ -44,7 +44,7 @@ public:
 protected:
 private:
 	void addAirWayElement(vrUserGeometry* _geometry, const vector<PathNode>& _data, int _index);
-	int creatXML(const char* _path);
+	int createXML(const char* _path);
 	void recordPath(const char* _path, bool _isWorking);
 	void praseAirWay(const TCHAR* _file);
 	inline float getLength(const float* _a, const float* _b);

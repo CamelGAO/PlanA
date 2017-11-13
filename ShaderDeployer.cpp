@@ -1,9 +1,14 @@
 #include "stdafx.h"
 #include "ShaderDeployer.h"
 
-classShaderDeployer * classShaderDeployer::pShaderDeployer = new classShaderDeployer();
+classShaderDeployer * classShaderDeployer::pInstance = new classShaderDeployer();
 std::map<std::string, vrShader *> classShaderDeployer::shaderList;
 std::map<std::string, int> classShaderDeployer::representationList;
+
+void classShaderDeployer::init()
+{
+	loadAllShader();
+}
 
 void classShaderDeployer::loadAllShader(void)
 {
@@ -40,7 +45,12 @@ classShaderDeployer::~classShaderDeployer(void)
 
 classShaderDeployer* classShaderDeployer::instance(void)
 {
-	return pShaderDeployer;
+	return pInstance;
+}
+
+void classShaderDeployer::destory(void)
+{
+	delete pInstance;
 }
  
 vrShader *classShaderDeployer::loadShader(std::string _name, ShaderType _type, const char *_path)
@@ -52,12 +62,12 @@ vrShader *classShaderDeployer::loadShader(std::string _name, ShaderType _type, c
 	case VERTEX:
 		__shader = __shaderFactory->read(_path, vrShader::TYPE_VERTEX);
 		__shader->ref();		//从shaderfactory中出来引用数为0，需要ref
-		__shader->setHardwareProfile(CG_PROFILE_VP40);
+		__shader->setHardwareProfile(CG_PROFILE_GP4VP);
 		break;
 	case FRAGMENT:
 		__shader = __shaderFactory->read(_path, vrShader::TYPE_FRAGMENT);
 		__shader->ref();		//从shaderfactory中出来引用数为0，需要ref
-		__shader->setHardwareProfile(CG_PROFILE_FP40);
+		__shader->setHardwareProfile(CG_PROFILE_GP4FP);
 		break;
 	default:
 		std::cout << "classShaderDeployer: addShader(): Unknown shader type!" << std::endl;

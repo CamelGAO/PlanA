@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "ParticleSystem.h"
 
-#define PATH(X) E:\\newstart\\Data_Texture\\##X
+#define PATH(X) "E:\\newstart\\Data_Texture\\##X"
 
 ParticleSystem::ParticleSystem()
 {

@@ -32,16 +32,18 @@ classGeometry::~classGeometry()
 
 	for(vector<vrUserGeometry *>::iterator it = LandingAreaData.begin(); it != LandingAreaData.end(); it++)
 	{
-		(*it)->unref(); 
+		(*it)->unref();
 	}
 	LandingAreaData.clear();
 
-	removeEvent(vsChannel::EVENT_POST_DRAW);
+	if(pSubscriber != NULL)
+		removeEvent(vsChannel::EVENT_POST_DRAW);
 }
 
 void classGeometry::init()
 {
-	addEvent(vsChannel::EVENT_POST_DRAW);
+	if(pSubscriber != NULL)                             //添加事件只能在app->configure函数中进行,如果不是在configure函数中new本类对象，请将subscriber设为NULL（留空即可，默认值为NULL）
+		addEvent(vsChannel::EVENT_POST_DRAW);
 
 	range = 999999;
 
@@ -55,8 +57,6 @@ void classGeometry::init()
 	trav.addPreVisit(vsGeometry::getStaticNodeId(), this, travFunc);			
 	trav.visit(pBuilding);
 
-	//creatXML(landingAreaBlueprintXMLPath);
-
 	praseAirWay(airWayXMLPath);
 	addAirWay(PathData);
 
@@ -64,7 +64,7 @@ void classGeometry::init()
 	addLandingArea(vuVec3f(0,0,200), vuVec3f(0,0,0));
 }
 
-int classGeometry::creatXML(const char* _path)
+int classGeometry::createXML(const char* _path)
 {
 	return 0;
 }
@@ -141,7 +141,7 @@ void classGeometry::recordPath(const char* _path, bool _isWorking)
 			{
 				int ret = 0;
 				doc->InsertEndChild(root);
-				ret = doc->SaveFile(_path);
+				ret = doc->SaveFile(_path); //保存文件
 				if (ret != 0)
 					std::cout << "recordPath(): Fail to write file! Code: " << ret << std::endl;
 			}

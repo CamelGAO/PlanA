@@ -4,12 +4,12 @@
 
 int getPath(TCHAR * _buffer, size_t _buffer_length)
 {
-	TCHAR __szFilter[] = TEXT("OpenFlight Files (*.flt)|*.flt||");  
+	TCHAR __szFilter[] = TEXT("OpenFlight Files (*.flt)|*.flt||");
 	TCHAR __inSeqence[MAX_PATH];
 
-	AfxSetResourceHandle(GetModuleHandle(NULL));   
-	CFileDialog dlg(TRUE, NULL, NULL, OFN_HIDEREADONLY, __szFilter);  
-	if(dlg.DoModal() != IDOK) 
+	AfxSetResourceHandle(GetModuleHandle(NULL));
+	CFileDialog dlg(TRUE, NULL, NULL, OFN_HIDEREADONLY, __szFilter);
+	if(dlg.DoModal() != IDOK)
 	{std::cout << "getPath() : Cancel!" << std::endl; return -2;}
 
 	wsprintf( __inSeqence, TEXT("%s"), dlg.GetPathName() );

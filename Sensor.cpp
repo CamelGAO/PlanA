@@ -28,6 +28,13 @@ classSensor::~classSensor()
 	trav_deinit.addPreVisit(vsGeometry::getStaticNodeId(), this, travFunc_deinit);			
 	if(NULL != pObject) trav_deinit.visit(pObject);
 
+	for(vector<SwapData>::iterator ib = swapBuffer.begin(); ib != swapBuffer.end(); ib++)   //如果在replace已经执行，但idle没有更改时程序结束，这是会内存泄露的，甚至崩溃
+	{
+		vuVec3f* temp = ((*ib).buffer)[idle];
+		if(temp) vuAllocArray<vuVec3f>::free(temp);
+	}
+	swapBuffer.clear();
+
 	isFirstInit = true;
 	isMoveEnable = false;
 }
@@ -37,6 +44,14 @@ void classSensor::init(void)
 	addEvent(vsChannel::EVENT_PRE_DRAW);
 
 	isMoveEnable = pObserver->getStrategyEnable();
+
+	planeThreshold = planeThresholdTarget = 30.0f; //这个值在用的时候再设置，这是个初值，防止后面没有设置
+	calDistance = 90;    //这个值在用的时候再设置，这是个初值，防止后面没有设置
+
+	swapBuffer.clear();
+	idle = 1;
+	bufferIndex = 0;
+	isMtDone = true;
 
 	pSelectedVertexShader = NULL;
 	pSelectedFragmentShader = NULL;
@@ -83,6 +98,10 @@ void classSensor::init(void)
 		if(NULL != pObject) trav_set_model_type.visit(pObject);
 		modelType = 1.0f;
 		if(NULL != pTerrain) trav_set_model_type.visit(pTerrain);
+		modelType = 2.0f;
+		if(NULL != pTerrain) trav_set_model_type.visit(pTree);
+		modelType = 3.0f;
+		if(NULL != pTerrain) trav_set_model_type.visit(pGrass); 
 
 		vsTraversalUser<int, vsTraversalLookUpNodeId> trav_model_no_modify; 
 		trav_model_no_modify.addPreVisit(vsGeometry::getStaticNodeId(), this, travFunc_model_no_modify);			
@@ -92,28 +111,33 @@ void classSensor::init(void)
 		trav_model_modify.addPreVisit(vsGeometry::getStaticNodeId(), this, travFunc_model_modify);			
 		if(NULL != pBuilding) trav_model_modify.visit(pBuilding);
 		if(NULL != pCar) trav_model_modify.visit(pCar);
+		if(NULL != pStone) trav_model_modify.visit(pStone);
 
 		vsTraversalUser<int, vsTraversalLookUpNodeId> trav_set_database_invisible;
 		trav_set_database_invisible.addPreVisit(vsGeometry::getStaticNodeId(), this, travFunc_set_database_invisible);			
 		if(NULL != pPowerLine) trav_set_database_invisible.visit(pPowerLine);
 		if(NULL != pTree) trav_set_database_invisible.visit(pTree);
+		if(NULL != pGrass) trav_set_database_invisible.visit(pGrass);
+		if(NULL != pStone) trav_set_database_invisible.visit(pStone);
 		if(NULL != pCar) trav_set_database_invisible.visit(pCar);
 
 		vsTraversalUser<int, vsTraversalLookUpNodeId> trav_set_radar_invisible;
 		trav_set_radar_invisible.addPreVisit(vsGeometry::getStaticNodeId(), this, travFunc_set_radar_invisible);			
 		if(NULL != pTree) trav_set_radar_invisible.visit(pTree);
-
+		if(NULL != pGrass) trav_set_radar_invisible.visit(pGrass);
 
 		vsTraversalUser<int, vsTraversalLookUpNodeId> trav_set_height_color;
 		trav_set_height_color.addPreVisit(vsGeometry::getStaticNodeId(), this, travFunc_set_height_color);
-		calDistance = 150;
+		planeThresholdTarget = planeThreshold = 1.0f;
+		calDistance = 120;
 		if(NULL != pTerrain) trav_set_height_color.visit(pTerrain);
 		if(NULL != pBuilding) trav_set_height_color.visit(pBuilding);
-		calDistance = 50;
+		calDistance = 30;
 		if(NULL != pTree) trav_set_height_color.visit(pTree);
-		calDistance = 50;
+		if(NULL != pGrass) trav_set_height_color.visit(pGrass);
+		calDistance = 60;
 		if(NULL != pCar) trav_set_height_color.visit(pCar);
-
+		if(NULL != pStone) trav_set_height_color.visit(pStone);  
 
 		isFirstInit = false;
 	}
@@ -125,9 +149,9 @@ void classSensor::initUniform(void)
 	fBlendMode = 1.0f;
 
 	fIsShadowMap = 0.0f;
-	fLidarMaxRange = 1500.0f;
+	fLidarMaxRange = 2000.0f;
 	fRadarMaxRange = 10000.0f;
-	fIrMaxRange = 500000.0f;
+	fIrMaxRange = 5000000.0f;
 	fSamplingRate = 0.2f;
 
 	fLidarViewRangeR = 0.3f;
@@ -150,7 +174,6 @@ void classSensor::initUniform(void)
 
 	mLidarScale = vuParameter::obtain< vuParameterTyped<float> >("scale_test");
 	mLidarScale->set(1.0f);
-
 
 	//mVisibility_test->vuParameter::obtain< vuParameterTyped<float> >("visibility_test");
 	//mVisibility_test->set(80000.0f);
@@ -262,7 +285,6 @@ void classSensor::initUniform(void)
 		//getMatrixTexture(rawMatrixTexture, 32, _tempMatrix);
 		//设置ir的view偏转矩阵-end
 	}
-	//使用纹理传递自建view偏转矩阵——end
 }
 
 unsigned char * classSensor::getRawLidarTexture(int _width, int _height, const char * _path)
@@ -285,7 +307,7 @@ unsigned char * classSensor::getRawLidarTexture(int _width, int _height, const c
 }
 
 template<typename T>
-void classSensor::getMatrixTexture(T * data, size_t _offset_float, vuMatrixf _matrix)
+void classSensor::getMatrixTexture(T * data, size_t _offset_float, vuMatrixf _matrix)  //弃用
 {
 	static UINT max = 1000;
 	static UINT step = UINT_MAX/(2*max); //2147484
@@ -329,17 +351,17 @@ void classSensor::makeTexture()
 		texture[i]->setMagFilter(vrTexture::FILTER_LINEAR );
 		texture[i]->setWrap(vrTexture::WRAP_REPEAT, vrTexture::WRAP_REPEAT);
 		texture[i]->setBorderEnable(false);
-		if(i == 0) 
+		if(i == 0)
 		{
 			texture[i]->setImageLevel(0, getRawLidarTexture(256,256));
 			texture[i]->setDimensions(256,256);
 		}
-		else if(i == 1) 	
+		else if(i == 1)
 		{
 			texture[i]->setImageLevel(0, getRawLidarTexture(128,128) );
 			texture[i]->setDimensions(128,128);
 		}
-		else if(i == 2) 	
+		else if(i == 2)
 		{
 			texture[i]->setImageLevel(0, getRawLidarTexture(64,64) );
 			texture[i]->setDimensions(64,64);
@@ -371,7 +393,7 @@ void classSensor::handleKey(vrWindow::Key _key, int _mod)
 	switch (_key)
 	{
 	case vrWindow::KEY_F6:
-		pChannel->setRepresentationIndex( pChannel->getRepresentationIndex() == representation ? 0 : representation );
+		pChannel->setRepresentationIndex( (pChannel->getRepresentationIndex() == representation) ? 0 : representation );
 		break;
 
 	case vrWindow::KEY_p:
@@ -384,13 +406,6 @@ void classSensor::handleKey(vrWindow::Key _key, int _mod)
 			fBlendMode = 1.0f;
 		mBlendMode_test->set(fBlendMode);
 		break;
-
-// 	case vrWindow::KEY_2:
-// 		fViewShape += 1.0f;
-// 		if(fViewShape>2.1f)
-// 			fViewShape = 1.0f;
-// 		mViewShape_test->set(fViewShape);
-// 		break;
 
 	case vrWindow::KEY_3:
 		fLidarColorMode += 1.0f;
@@ -406,58 +421,6 @@ void classSensor::handleKey(vrWindow::Key _key, int _mod)
 		mRadarColorMode->set(fRadarColorMode);
 		break;
 
-// 	case vrWindow::KEY_q:
-// 		fViewRangeR -= 0.02f;
-// 		if(fViewRangeR<0.02f)
-// 			fViewRangeR = 0.02f;
-// 		mViewRangeR_test->set(fViewRangeR);
-// 		break;
-// 	case vrWindow::KEY_w:
-// 		fViewRangeR += 0.02f;
-// 		if(fViewRangeR>0.4f)
-// 			fViewRangeR = 0.4f;
-// 		mViewRangeR_test->set(fViewRangeR);
-// 		break;
-// 
-// 	case vrWindow::KEY_e:
-// 		fViewRangeH -= 0.02f;
-// 		if(fViewRangeH<0.02f)
-// 			fViewRangeH = 0.02f;
-// 		mViewRangeH_test->set(fViewRangeH);
-// 		break;
-// 	case vrWindow::KEY_r:
-// 		fViewRangeH += 0.02f;
-// 		if(fViewRangeH>0.4f)
-// 			fViewRangeH = 0.4f;
-// 		mViewRangeH_test->set(fViewRangeH);
-// 		break;
-// 
-// 	case vrWindow::KEY_t:
-// 		fViewRangeV -= 0.02f;
-// 		if(fViewRangeV<0.02f)
-// 			fViewRangeV = 0.02f;
-// 		mViewRangeV_test->set(fViewRangeV);
-// 		break;
-// 	case vrWindow::KEY_y:
-// 		fViewRangeV += 0.02f;
-// 		if(fViewRangeV>0.4f)
-// 			fViewRangeV = 0.4f;
-// 		mViewRangeV_test->set(fViewRangeV);
-// 		break;
-
-	case vrWindow::KEY_u:
-		fLidarMaxRange -= 100.0f;
-		if(fLidarMaxRange<100.0f)
-			fLidarMaxRange = 100.0f;
-		mLidarRange_test->set(fLidarMaxRange);
-		break;
-	case vrWindow::KEY_i:
-		fLidarMaxRange += 100.0f;
-		if(fLidarMaxRange>3000.0f)
-			fLidarMaxRange = 3000.0f;
-		mLidarRange_test->set(fLidarMaxRange);
-		break;
-
 	case vrWindow::KEY_6:
 		fSamplingRate -= 0.005f;
 		if(fSamplingRate<0.0f)
@@ -469,6 +432,11 @@ void classSensor::handleKey(vrWindow::Key _key, int _mod)
 		if(fSamplingRate>1.0f)
 			fSamplingRate = 1.0f;
 		mSamplingRate_test->set(fSamplingRate);
+		break;
+	case vrWindow::KEY_2:
+		planeThresholdTarget+=1.0f;
+		break;
+	default:
 		break;
 	}
 }
@@ -521,8 +489,11 @@ vsTraversal::Result classSensor::travFunc_add_shader(vsNode *node, int)
 	return vsTraversal::RESULT_CONTINUE;
 }
 
-vsTraversal::Result classSensor::travFunc_model_modify(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数
+vsTraversal::Result classSensor::travFunc_model_modify(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数, 纹理单元3被用来记录lida_texcoord
 {
+	static float roof_scale = 0.75;
+	static float base_scale = 1.1;
+
 	vsGeometry *geometry_s = static_cast<vsGeometry *>(node);   //注意vrGeometry和vsGeometry的区别
 	vrGeometry *geometry_r = geometry_s->getGeometry();
 
@@ -532,9 +503,6 @@ vsTraversal::Result classSensor::travFunc_model_modify(vsNode *node, int)   //修
 	float model_roof = model_max[2];
 	float model_base = model_min[2];
 	float model_height = model_roof - model_base + 0.01;  //+0.01防止出现0
-
-	float roof_scale = 0.75;
-	float base_scale = 1.1;
 
 	vrDrawFunc::Data *data = const_cast<vrDrawFunc::Data *>(&geometry_r->getData());
 
@@ -627,6 +595,7 @@ vsTraversal::Result classSensor::travFunc_model_no_modify(vsNode *node, int)   /
 
 	data->m_maxActiveStage = data->m_maxActiveStage < 2 ? 2 : data->m_maxActiveStage;   //设定使用的纹理坐标层数
 
+
 	vuVec3f * color_tc2;
 	if(data->m_numTextureCoords[2] != data->m_numVertices)
 	{
@@ -652,7 +621,7 @@ vsTraversal::Result classSensor::travFunc_model_no_modify(vsNode *node, int)   /
 	return vsTraversal::RESULT_CONTINUE;
 }
 
-vsTraversal::Result classSensor::travFunc_set_height_color(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数
+vsTraversal::Result classSensor::travFunc_set_height_color(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数, 纹理单元3被用来记录lida_texcoord
 {
 	vsGeometry *geometry_s = static_cast<vsGeometry *>(node);   //注意vrGeometry和vsGeometry的区别
 	vrGeometry *geometry_r = geometry_s->getGeometry();
@@ -685,7 +654,53 @@ vsTraversal::Result classSensor::travFunc_set_height_color(vsNode *node, int)   
 	return vsTraversal::RESULT_CONTINUE;
 }
 
-vsTraversal::Result classSensor::travFunc_set_radar_invisible(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数
+vsTraversal::Result classSensor::travFunc_update_height_color_mt(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数, 纹理单元3被用来记录lida_texcoord
+{
+	vsGeometry *geometry_s = static_cast<vsGeometry *>(node);   //注意vrGeometry和vsGeometry的区别
+	vrGeometry *geometry_r = geometry_s->getGeometry();
+
+	vrDrawFunc::Data *data = const_cast<vrDrawFunc::Data *>(&geometry_r->getData());
+
+	if (data->m_numTextureCoords[2] != data->m_numVertices)
+	{
+		std::cout << "travFunc_update_height_color_mt() : m_numTextureCoords[0] != m_numVertices ." << std::endl;
+		return vsTraversal::RESULT_CONTINUE;
+	}
+
+	vuVec3f* color_tc2 = (vuVec3f*)(data->m_textureCoord[2].get());
+	
+	if (color_tc2 == NULL)
+	{
+		cout << "travFunc_set_height_color_mt(): Null pointer!" << endl;
+		return vsTraversal::RESULT_CONTINUE;
+	}
+	//文理坐标单元2中第1个元素用来控制被遍历的节点在哪个部分中不显示 1-database 2-radar 4-lidar 8-ir
+	//纹理坐标单元2的地2个元素用来记录radar下顶点颜色的划分 0~1
+	//纹理坐标单元2的地3个元素用来记录radar下是否改变顶点 1改 0 不改
+
+	//cout << swapBuffer.size() << "  " << bufferIndex << endl;
+	if (swapBuffer.size() == bufferIndex)
+	{
+		SwapData bufferElement;
+		bufferElement.field = &(data->m_textureCoord[2]);
+		bufferElement.buffer[0] = color_tc2;
+		bufferElement.buffer[1] = vuAllocArray<vuVec3f>::calloc(data->m_numVertices);
+		vuAllocArray<vuVec3f>::ref(bufferElement.buffer[1]);
+		swapBuffer.push_back(bufferElement);
+
+		memcpy(bufferElement.buffer[1], bufferElement.buffer[0], sizeof(vuVec3f) * data->m_numVertices);
+	}
+
+	for(size_t i = 0; i < data->m_numVertices; i++)   
+	{
+		(swapBuffer[bufferIndex].buffer[idle])[i][1] = calHeightColor((data->m_vertex.get())[i]);
+	}
+
+	bufferIndex++;
+	return vsTraversal::RESULT_CONTINUE;
+}
+
+vsTraversal::Result classSensor::travFunc_set_radar_invisible(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数, 纹理单元3被用来记录lida_texcoord
 {
 	vsGeometry *geometry_s = static_cast<vsGeometry *>(node);   //注意vrGeometry和vsGeometry的区别
 	vrGeometry *geometry_r = geometry_s->getGeometry();
@@ -726,14 +741,14 @@ vsTraversal::Result classSensor::travFunc_set_lidar_texcoord(vsNode *node, int) 
 {
 	static const double base_rate = 10000.0;  //假设这个值为10000，则是被认为在大小为 100*100 = 10000 的平面上贴当前选定大小的纹理（在travFunc_add_shader遍历函数中进行选择）是合适的，也就是模型表面面积和纹理坐标面积（1*1=1）的比值是10000/1=10000，
 												//所以如果n*n大小的平面上贴整张纹理是合适的，这个值就应该是n*n
-	static const double scale  = 0.075f;	//最终的纹理坐标还是要乘一个值来做一下微调
+	static const double scale  = 0.05f;	//最终的纹理坐标还是要乘一个值来做一下微调
 
 	vsGeometry *geometry_s = static_cast<vsGeometry *>(node);   //注意vrGeometry和vsGeometry的区别
 	vrGeometry *geometry_r = geometry_s->getGeometry();
 
 	vrDrawFunc::Data *data = const_cast<vrDrawFunc::Data *>(&geometry_r->getData());
 
-	if (data->m_numTextureCoords[0] != data->m_numVertices)
+	if (data->m_numTextureCoords[0] != data->m_numVertices)   //不相等说明有些平面没有纹理
 	{
 		std::cout << "travFunc_set_lidar_texcoord() : m_numTextureCoords[0] != m_numVertices ." << std::endl;
 		return vsTraversal::RESULT_CONTINUE;
@@ -767,7 +782,8 @@ vsTraversal::Result classSensor::travFunc_set_lidar_texcoord(vsNode *node, int) 
 
 
 
-	bool isContinuous = false;   //记录当前的三角面是连续的还是已经发生了跳跃（若当前三角面的面积为0则说明已经发生了跳跃，若上一个三角面的面积不为零且当前三角面的面积也不为零则说明当前是连续状态）,起始条件必然是false
+	bool isContinuous = false;   //记录当前的三角面是连续的还是已经发生了跳跃（若当前三角面的面积为0则说明已经发生了跳跃，若上一个三角面的面积不为零且当前三角面的面积也不为零则说明当前是连续状态）
+								//起始条件必然是false
 	for(size_t i = 2; i < data->m_numVertices; i++)   
 	{
 		area_model = calTriangleArea((firstTriangleModelCoord[i-2]).m_vec, (firstTriangleModelCoord[i-1]).m_vec, (firstTriangleModelCoord[i]).m_vec, 3);
@@ -834,8 +850,7 @@ vsTraversal::Result classSensor::travFunc_set_model_type(vsNode *node, int)   //
 		coordinate_tc3 = (vuVec3f*)(data->m_textureCoord[3].get());
 	}
 
-	//文理坐标单元3中 前两个元素记录了lidar纹理坐标 第三个元素记录了model类型 0-unknown  1-terrain
-
+	//文理坐标单元3中 前两个元素记录了lidar纹理坐标 第三个元素记录了model类型 0-unknown  1-terrain 2-tree 3-grass
 
 	for(size_t i = 0; i < data->m_numVertices; i++)   
 	{
@@ -845,7 +860,7 @@ vsTraversal::Result classSensor::travFunc_set_model_type(vsNode *node, int)   //
 	return vsTraversal::RESULT_CONTINUE;
 }
 
-vsTraversal::Result classSensor::travFunc_set_database_invisible(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数
+vsTraversal::Result classSensor::travFunc_set_database_invisible(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数, 纹理单元3被用来记录lida_texcoord
 {
 	vsGeometry *geometry_s = static_cast<vsGeometry *>(node);   //注意vrGeometry和vsGeometry的区别
 	vrGeometry *geometry_r = geometry_s->getGeometry();
@@ -872,7 +887,7 @@ vsTraversal::Result classSensor::travFunc_set_database_invisible(vsNode *node, i
 	//纹理坐标单元2的地3个元素用来记录radar下是否改变顶点 1改 0 不改
 	for(size_t i = 0; i < data->m_numVertices; i++)   
 	{
-		size_t temp = color_tc2[i][0];                                      
+		size_t temp = color_tc2[i][0];
 		if (!(temp & 0x01))
 		{
 			color_tc2[i][0] += 1.0f;
@@ -882,7 +897,7 @@ vsTraversal::Result classSensor::travFunc_set_database_invisible(vsNode *node, i
 	return vsTraversal::RESULT_CONTINUE;
 }
 
-vsTraversal::Result classSensor::travFunc_deinit(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数
+vsTraversal::Result classSensor::travFunc_deinit(vsNode *node, int)   //修改纹理单元1为形变后的点的坐标，纹理单元2被用来记录一些参数, 纹理单元3被用来记录lida_texcoord
 {
 	vsGeometry *geometry_s = static_cast<vsGeometry *>(node);   //注意vrGeometry和vsGeometry的区别
 	vrGeometry *geometry_r = geometry_s->getGeometry();
@@ -906,11 +921,10 @@ vsTraversal::Result classSensor::travFunc_deinit(vsNode *node, int)   //修改纹理
 		data->m_dimensionTextureCoord[stage] = vrDrawFunc::DIMENSION_2;
 	}
 
-
 	return vsTraversal::RESULT_CONTINUE;
 }
 
-vsTraversal::Result classSensor::travFunc_find_z(vsNode *_node, int)
+vsTraversal::Result classSensor::travFunc_find_local_z(vsNode *_node, int)
 {
 	vsGeometry *geometry_s = static_cast<vsGeometry *>(_node);   //注意vrGeometry和vsGeometry的区别
 	vrGeometry *geometry_r = geometry_s->getGeometry();
@@ -939,19 +953,24 @@ float classSensor::calHeightColor(const vuVec3f& _coord)
 	z_data.clear();
 	currentCoord = _coord;
 	vsTraversalUser<int, vsTraversalLookUpNodeId> trav;
-	trav.addPreVisit(vsGeometry::getStaticNodeId(), this, travFunc_find_z);
+	trav.addPreVisit(vsGeometry::getStaticNodeId(), this, travFunc_find_local_z);
 	if(NULL != pBuilding) trav.visit(pBuilding);
 	if(NULL != pTerrain) trav.visit(pTerrain);
 
 	float z = _coord[2];
 	z_data.push_back(z);
-	float max = *std::max_element(z_data.begin(), z_data.end());  
+	float max = *std::max_element(z_data.begin(), z_data.end());
 	float min = *std::min_element(z_data.begin(), z_data.end());
 
-	if ((max - min) < 0.5f)
-		return 0.5f;
+	float local_z_range = max - min;
+	if (local_z_range < planeThreshold)   //小起伏平面的处理：降低局部颜色区分度
+	{
+		if(local_z_range < 0.5f)  //这是真平面！
+			return 0.5f;
+		return ((z-min)/local_z_range - 0.5f) * 0.1f + 0.5f;
+	}
 
-	return (z-min)/(max-min);
+	return (z-min)/local_z_range;
 }
 
 void classSensor::handleDrawEvent(vsChannel::Event _event, const vsChannel *_channel, vrDrawContext *_context)
@@ -962,26 +981,52 @@ void classSensor::handleDrawEvent(vsChannel::Event _event, const vsChannel *_cha
 
 void classSensor::handleRunLoop(void)
 {
-	static size_t __delay = 0;
-	if (( ++__delay) > 2 )
+	static bool isNeedSwap = false;  //isNeedSwap实际上被用来检测isMtDone的上升沿，只在上升沿处swap一次
+	if(planeThresholdTarget != planeThreshold && isMtDone)
 	{
-		mOffset_test->set( 0.001f * rand()); 
-		__delay = 0;
+		HANDLE handle;
+
+		isMtDone = false;
+		planeThreshold = planeThresholdTarget;
+		isNeedSwap = true;
+
+		handle = (HANDLE)_beginthreadex(0, 0, (unsigned int (__stdcall *)(void *))classSensor::updateModelModify, this, 0, 0);
+		CloseHandle(handle);
+
+		cout << "Start processing! Target:" << planeThresholdTarget << endl;
 	}
-
-	//mOffset_test->set(__offset > 1.0f ? (__offset = 0.001f) : (__offset += 0.001f));
-	//mOffset_test->set(__offset*rand()); 
-
-	if (isStartFound)
+	if(isNeedSwap && isMtDone && planeThresholdTarget == planeThreshold)  //判断planeThresholdTarget == planeThreshold考虑到如果在处理期间target改变，就暂时不交换，直接开始新的处理
 	{
-		double __pos[3], __hpr[3];
-		getPositionHprFromStart(__pos, __hpr);
-		pObserver->setTranslate(__pos[0], __pos[1], __pos[2]);
-		pObserver->setRotate(__hpr[0], __hpr[1], 0);
+		for(vector<SwapData>::iterator ib = swapBuffer.begin(); ib != swapBuffer.end(); ib++)
+		{
+			((*ib).field)->replace(((*ib).buffer)[idle]);
+		}
 
-		isStartFound = false;
+		if (idle == 1) idle = 0; //交替idle状态
+		else idle = 1;
+
+		isNeedSwap = false;
+		cout << "Processing is complete! Now:" << planeThreshold << endl;
 	}
-	
+}
+
+DWORD WINAPI classSensor::updateModelModify(void* _p)   //新线程中调用的函数，更新颜色
+{
+	DWORD dwStart = GetTickCount();
+
+	classSensor* _sensorOject = (classSensor*)_p;
+	_sensorOject->bufferIndex = 0;
+	vsTraversalUser<int, vsTraversalLookUpNodeId> trav_set_height_color;
+	trav_set_height_color.addPreVisit(vsGeometry::getStaticNodeId(), _sensorOject, classSensor::travFunc_update_height_color_mt);
+	if(NULL != _sensorOject->pTerrain) trav_set_height_color.visit(_sensorOject->pTerrain);
+	if(NULL != _sensorOject->pBuilding) trav_set_height_color.visit(_sensorOject->pBuilding);
+	_sensorOject->isMtDone = true;
+
+	DWORD dwEnd = GetTickCount();
+
+	cout << "The traversal has been finished within " << (dwEnd-dwStart)/1000.0 << " second(s)" << endl;
+
+	return 0;
 }
 
 double classSensor::calTriangleArea(float *a, float *b, float *c, size_t d)

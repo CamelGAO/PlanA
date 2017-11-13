@@ -111,7 +111,6 @@ int vrUserGeometry::getLineSegment( int index, vuVec3<float> *begin,
 
 float* vrUserGeometry::getValue(int _index, int _pos, int _axis)
 {
-	// Make sure we've got a valid index
 	int numLines = getNumPrimitives();
 	if(_index >= numLines)
 	{

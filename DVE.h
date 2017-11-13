@@ -23,11 +23,8 @@ public:
 	virtual void handleKey(vrWindow::Key _key, int _mod);
 	virtual void handleRunLoop(void);
 
-	void deleteDveObject(enumDve _dve);
-	void enableDve(enumDve _dve);
-
-	void loadPanel(void);                 //在这里实现panel的加载  //弃用，加载的过程必须在configure中进行
-	void removePanel(void);		 //在这里实现panel的移除	//弃用
+	void deleteDveObject(classEnvInfo::enumDve _dve);
+	void enableDve(classEnvInfo::enumDve _dve);
 
 	static float calculateAccSnowDensity(float _in);
 
@@ -42,6 +39,7 @@ private:
 
 	vsChannel::Subscriber *pSubscriber;
 
+	classPanel::PanelInformation* pPanelInfo;
 	vpGLStudioComponent *pGLSComponent;
 
 	static bool isMoveEnable;		//记录是否运动，在析构中会被重置

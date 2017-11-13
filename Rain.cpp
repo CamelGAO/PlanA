@@ -10,7 +10,7 @@ classRain::classRain(vpObserver *_observer, vsChannel::Subscriber *_subscriber):
 	if(_subscriber != NULL)                             //添加事件只能在app->configure函数中进行，这里兼顾了通过classDve导入和单独导入的情况
 		addEvent(vsChannel::EVENT_POST_DRAW);
 
-	pParticleSystem->environmentData.total = 4000;
+	pParticleSystem->environmentData.total = 200;
 	pParticleSystem->environmentData.tex = 0;
 	pParticleSystem->environmentData.areaRange = 200;
 	pParticleSystem->environmentData.areaCenter = vuVec3d(0.0, 0.0, 0.0);

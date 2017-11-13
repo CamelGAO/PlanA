@@ -1,10 +1,10 @@
 #include "stdafx.h"
 #include "Common.h"
 
-classCommon::classEnvInfo classCommon::envInfo;
-classCommon::classSensorInfo classCommon::sensorInfo;
+classEnvInfo classCommon::envInfo;
+classSensorInfo classCommon::sensorInfo;
 
-classCommon::classEnvInfo::classEnvInfo()
+classEnvInfo::classEnvInfo()
 {
 	time = 12;
 	accDensity = 0;
@@ -14,19 +14,17 @@ classCommon::classEnvInfo::classEnvInfo()
 	rainLevel = 0;
 	snowLevel = 0;
 }
-
-classCommon::classEnvInfo::~classEnvInfo()
+classEnvInfo::~classEnvInfo()
 {
 }
 
-classCommon::classSensorInfo::classSensorInfo()
+
+classSensorInfo::classSensorInfo()
 {
 }
-
-classCommon::classSensorInfo::~classSensorInfo()
+classSensorInfo::~classSensorInfo()
 {
 }
-
 
 
 classCommon::classCommon()

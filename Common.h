@@ -3,10 +3,9 @@
 
 #include "stdafx.h"
 
-class classCommon
+class classEnvInfo
 {
 public:
-
 	enum enumDve
 	{
 		Time,
@@ -19,34 +18,34 @@ public:
 		Nothing
 	};
 
-	class classEnvInfo
-	{
-	public:
-		classEnvInfo();
-		~classEnvInfo();
+	classEnvInfo();
+	~classEnvInfo();
 
-		float time;
-		float fogVisibility;
-		float fogColor;
-		float accDensity;
-		float rainLevel;
-		float snowLevel;
-		float dustDensity;
+	float time;
+	float fogVisibility;
+	float fogColor;
+	float accDensity;
+	float rainLevel;
+	float snowLevel;
+	float dustDensity;
 
-	protected:
-	private:
-	};
+protected:
+private:
+};
 
-	class classSensorInfo
-	{
-	public:
-		classSensorInfo();
-		~classSensorInfo();
+class classSensorInfo
+{
+public:
+	classSensorInfo();
+	~classSensorInfo();
 
-	protected:
-	private:
-	};
+protected:
+private:
+};
 
+class classCommon
+{
+public:
 	classCommon();
 	~classCommon();
 

@@ -9,6 +9,12 @@
 class classSensor:public classBase
 {
 public:
+	struct SwapData
+	{
+		vuField<void*, vrDrawFunc::AttributeTrait>* field;
+		vuVec3f* buffer[2];
+	};
+
 	classSensor(vpObserver *_observer, vsChannel::Subscriber *_subscriber = NULL);
 	classSensor(const char *_name, vsChannel::Subscriber *_subscriber = NULL);
 	~classSensor();
@@ -34,10 +40,13 @@ public:
 	vsTraversal::Result travFunc_model_no_modify(vsNode *node, int);
 	vsTraversal::Result travFunc_set_database_invisible(vsNode *node, int);
 	vsTraversal::Result travFunc_set_height_color(vsNode *node, int);
+	vsTraversal::Result travFunc_update_height_color_mt(vsNode *node, int);   //目前最多一个线程，因为调用了使用全局变量的函数
 	vsTraversal::Result travFunc_set_radar_invisible(vsNode *node, int);
-	vsTraversal::Result travFunc_find_z(vsNode *node, int);
+	vsTraversal::Result travFunc_find_local_z(vsNode *node, int);
 	vsTraversal::Result travFunc_set_lidar_texcoord(vsNode *node, int);
 	vsTraversal::Result travFunc_set_model_type(vsNode *node, int);
+
+	static DWORD WINAPI updateModelModify(void* _p);
 
 	vsTraversal::Result travFunc_deinit(vsNode *node, int);
 
@@ -49,10 +58,17 @@ protected:
 private:
 	double calTriangleArea(float *a, float *b, float *c, size_t d);
 
-	float calDistance;
+	float calDistance;  //计算local相对高度时，距离待处理的点不超过这个值的点会参与计算
+	float planeThreshold;  //平面的起伏程度多大以内可以视为平面？设置这个值
+	float planeThresholdTarget;    //按键将影响这个值，随后在线程启动前写入planeThreshold，避免planeThreshold在处理时被修改
 	vuVec3f currentCoord;
 	vector<float> z_data;
 	float modelType;
+   
+	size_t idle;	//修改数据的操作会在当前不工作的buffer上进行，这个值记录了当前空闲的那个buffer
+	size_t bufferIndex;  //每次遍历的顺序是一样的，这个值在遍历开始时为零，每遍历一个节点+1，遍历结束后清零
+	vector<SwapData> swapBuffer; //用于在新线程中处理数据，实现指定不同的数据进行显示
+	bool isMtDone; //处理完成标志
 
 	float distance;
 	float range_x;
