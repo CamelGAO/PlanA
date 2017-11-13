@@ -9,7 +9,8 @@ struct fout
 	float4 color : COLOR;
 };
 
-void SnowFragmentShader1(in vin IN, out fout OUT, float2 texCoord : TEXCOORD0, uniform sampler2D decal, uniform float density, uniform float4 fog_color, uniform float time_factor)
+void SnowFragmentShader1(in vin IN, out fout OUT, float2 texCoord : TEXCOORD0, uniform sampler2D decal, uniform float density, uniform float4 fog_color, uniform float time_factor, 
+							uniform float4 light_pos : state.light[0].position)
 {
 	float4 color = tex2D(decal,texCoord);
 
@@ -29,6 +30,7 @@ void SnowFragmentShader1(in vin IN, out fout OUT, float2 texCoord : TEXCOORD0, u
 		OUT.color = color;
 	}
 	
-	OUT.color = float4(OUT.color.xyz * time_factor, 1.0f);
 	OUT.color = float4(OUT.color.xyz * IN.fogfactor + (1 - IN.fogfactor) * fog_color.xyz * time_factor, 1.0f);
+	if(time_factor < 0.25f) time_factor = 0.0f;  //积雪模式下暂时达不到纯黑，所以作了一下弊  (￢_￢)
+	OUT.color = float4(OUT.color.xyz * time_factor, 1.0f);
 }

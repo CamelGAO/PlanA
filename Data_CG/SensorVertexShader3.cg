@@ -21,7 +21,7 @@ struct vertout
     float4 vcolor_lidar :  TEXCOORD4;
 	float4 vcolor_radar	: TEXCOORD5;
 	float4 normal : TEXCOORD6;
-    float3 vposition : TEXCOORD7;
+    float3 mvposition : TEXCOORD7;
 };
 
 float getFlag(float4 _pos, float4x4 _view_matrix, float _blendMode_test, float _max_range, float _view_range_r_test, float _view_range_h_test, float _view_range_v_test, float _view_shape_test);
@@ -30,7 +30,6 @@ vertout SensorVertexShader3(appin IN,uniform float4x4 modelViewProj,
 								uniform float4x4 modelView,
 								uniform float max_range_lidar_test,
 								uniform float max_range_radar_test,
-								uniform float scale_test,
 								uniform float4x4 proj : state.matrix.projection,
 								uniform float lidar_color_mode_test,
 								uniform float radar_color_mode_test,
@@ -39,7 +38,7 @@ vertout SensorVertexShader3(appin IN,uniform float4x4 modelViewProj,
 
 								uniform float4x4 view_radar_test,
 								uniform float radar_view_range_r_test,
-								uniform float radar_view_range_h_test, 
+								uniform float radar_view_range_h_test,
 								uniform float radar_view_range_v_test,
 								uniform float radar_view_shape_test
 								)
@@ -50,19 +49,17 @@ vertout SensorVertexShader3(appin IN,uniform float4x4 modelViewProj,
 	float3 modify_vector = IN.texcoord1;
 
 	OUT.texcoord0 = IN.texcoord0;
-	OUT.texcoord1 = scale_test * IN.texcoord3.xy;
+	OUT.texcoord1 = IN.texcoord3.xy;
 	float model_type = IN.texcoord3.z;
-	OUT.vposition = IN.position;
 	OUT.normal = float4(IN.normal, 0.0f);
+	//OUT.normal = mul(glstate.matrix.invtrans.modelview[0], OUT.normal);  //直接计算出在eye空间中的法线，需要时再启用，注意在片段着色器使用时要首先归一化
 
-	float4 tempPosition = float4( IN.position, 1.0f ); 
-
-	float4 aftersnowPos = tempPosition;
+	float4 tempPosition = float4( IN.position, 1.0f );
 	
-	// if(model_type == 1.0f)
-	// 	aftersnowPos.z += 2.0f;
+	float4 aftersnowPos = tempPosition;
 
 	OUT.position = mul( modelView, tempPosition);  //注意这里只是计算了modelview， 结果作中间变量给计算雾的融合比例使用, 还不是顶点着色器的输出结果
+	OUT.mvposition = OUT.position.xyz;
 	float range = length(OUT.position.xyz);
 	OUT.colorfactor.r = clamp((fog_visibility - abs(OUT.position.z))/fog_visibility, 0 , 1);  //计算雾融合的比例
 
@@ -80,8 +77,6 @@ vertout SensorVertexShader3(appin IN,uniform float4x4 modelViewProj,
 	}
 	//计算是否有积雪-结束
 
-
-
 	//判断radar形状-start
 	float flag_radar = getFlag(	OUT.position, 
 								view_radar_test, 
@@ -93,6 +88,7 @@ vertout SensorVertexShader3(appin IN,uniform float4x4 modelViewProj,
 								radar_view_shape_test);
 	//判断radar形状-end
 
+	//判断是否修改顶点位置-start
 	if(flag_radar >= 0.9f)    
 	{
 		if(IN.controlflag.z > 0.9f)
@@ -104,60 +100,75 @@ vertout SensorVertexShader3(appin IN,uniform float4x4 modelViewProj,
 	{
 		OUT.position = mul( modelViewProj, aftersnowPos);
 	}
+	//判断是否修改顶点位置-end
 
-	float height = IN.controlflag.g * 0.5f;   // IN.controlflag.g范围0~1 相对值
+	float height = IN.controlflag.g;   // IN.controlflag.g范围0~1 相对值
 
 
-	// const float section = max_range_lidar_test;
+	float section = max_range_lidar_test;
 
-    // if( range < max_range_lidar_test)    //保证地形的显示
-    // {
-    //     if( lidar_color_mode_test == 1.0f )  temp_color = float4(0.5f,0.5f,0.5f,1.0f);
-	// 	else if(lidar_color_mode_test == 2.0f)  temp_color = float4( 69.0f/255.0f, 129.0f/255.0f, 193.0f/255.0f, 1.0f); //分层着色
-	// 	else if(lidar_color_mode_test == 3.0f)  
-	// 	{
-	// 		float colorzone = range/(max_range_lidar_test)*2;
-	// 		if(colorzone < 1)
-	// 			temp_color = float4(1.0f - colorzone, colorzone, 0.0f, 1.0f);
-	// 		else
-	// 			temp_color = float4(0.0f, 2 - colorzone, colorzone - 1.0f, 1.0f);
-	// 	}
-	// 	else if(lidar_color_mode_test == 4.0f)
-	// 	{
-	// 		float colorzone = fmod(range,section);
-	// 		if(colorzone < 0.1*section)			temp_color = float4(1.0f, 0.0f, 0.0f, 1.0f);
-	// 		else if(colorzone < 0.2*section)		temp_color = float4(0.8f, 0.2f, 0.0f, 1.0f);
-	// 		else if(colorzone < 0.3*section)		temp_color = float4(0.6f, 0.4f, 0.0f, 1.0f);
-	// 		else if(colorzone < 0.4*section)		temp_color = float4(0.4f, 0.6f, 0.0f, 1.0f);
-	// 		else if(colorzone < 0.5*section)		temp_color = float4(0.2f, 0.8f, 0.0f, 1.0f);				
-	// 		else if(colorzone < 0.6*section)		temp_color = float4(0.0f, 0.8f, 0.2f, 1.0f);
-	// 		else if(colorzone < 0.7*section)		temp_color = float4(0.0f, 0.6f, 0.4f, 1.0f);
-	// 		else if(colorzone < 0.8*section)		temp_color = float4(0.0f, 0.4f, 0.6f, 1.0f);
-	// 		else if(colorzone < 0.9*section)		temp_color = float4(0.0f, 0.2f, 0.8f, 1.0f);
-	// 		else temp_color = float4(0.0f, 0.0f, 1.0f, 1.0f);
-	// 	}	
-	// }
-    // OUT.vcolor_lidar = temp_color;//float4(modify_vector, 1.0f);
+    if( range < max_range_lidar_test*1.2f) //乘一个值是因为在顶点着色器内点很稀疏，边缘不整齐，导致在片段shader内远端颜色不正常
+    {
+        if( lidar_color_mode_test == 1.0f )    //相对高度
+		{
+			if(model_type == 1.0f)
+				temp_color = float4(height*0.5f, 0.5f, 0.0f, 1.0f);
+			else
+				temp_color = float4(height, 1.0f, 0.0f, 1.0f);
+		}
+		else if(lidar_color_mode_test == 2.0f)    
+		{
+			if(model_type == 1.0f)
+				temp_color = float4(height*0.5f, 0.5f, 0.0f, 1.0f);
+			else
+				temp_color = float4(height, 1.0f, 0.0f, 1.0f);
+		}
+		else if(lidar_color_mode_test == 3.0f)   //相对高度 黑白
+		{
+			float colorzone = clamp(range/(max_range_lidar_test), 0, 1);
+			if(model_type == 1.0f)
+				temp_color.rgb = (1-colorzone)*0.2f;
+			else
+				temp_color.rgb = 1-colorzone;
+			temp_color.a = 1.0f;
+		}
+		else if(lidar_color_mode_test == 4.0f)
+		{
+			float colorzone = fmod(range,section);
+			if(colorzone < 0.1*section)			temp_color = float4(1.0f, 0.0f, 0.0f, 1.0f);
+			else if(colorzone < 0.2*section)		temp_color = float4(0.8f, 0.2f, 0.0f, 1.0f);
+			else if(colorzone < 0.3*section)		temp_color = float4(0.6f, 0.4f, 0.0f, 1.0f);
+			else if(colorzone < 0.4*section)		temp_color = float4(0.4f, 0.6f, 0.0f, 1.0f);
+			else if(colorzone < 0.5*section)		temp_color = float4(0.2f, 0.8f, 0.0f, 1.0f);				
+			else if(colorzone < 0.6*section)		temp_color = float4(0.0f, 0.8f, 0.2f, 1.0f);
+			else if(colorzone < 0.7*section)		temp_color = float4(0.0f, 0.6f, 0.4f, 1.0f);
+			else if(colorzone < 0.8*section)		temp_color = float4(0.0f, 0.4f, 0.6f, 1.0f);
+			else if(colorzone < 0.9*section)		temp_color = float4(0.0f, 0.2f, 0.8f, 1.0f);
+			else temp_color = float4(0.0f, 0.0f, 1.0f, 1.0f);
+			if(model_type == 1.0f)
+				temp_color.rgb *= 0.5f;
+		}	
+	}
+    OUT.vcolor_lidar = temp_color;//float4(modify_vector, 1.0f);
 
-	OUT.vcolor_lidar = float4((0.5f + height), (0.5f - height), 0.0f, 1.0f);
 
-	//check = 1 - check;
-    // if( range < max_range_radar_test)    //保证地形的显示
-    // {
-	// 	if(radar_color_mode_test == 1.0f)  //分层着色
-	// 	{
-	// 		if( check < 0.05f) temp_color = float4(219.0f/255.0f,182.0f/255.0f,81.0f/255.0f,1.0f);
-	// 		else if( check < 0.15f )  temp_color = float4(108.0f/255.0f,135.0f/255.0f,132.0f/255.0f,1.0f);
-	// 		else if( check < 0.5f ) temp_color = float4(219.0f/255.0f,182.0f/255.0f,81.0f/255.0f,1.0f);
-	// 		else if( check < 0.9f ) temp_color = float4(176.0f/255.0f,140.0f/255.0f,67.0f/255.0f,1.0f);
-	// 		else temp_color = float4(132.0f/255.0f,98.0f/255.0f,53.0f/255.0f,1.0f);
-	// 	}
-	// 	else 
-	// 		if(radar_color_mode_test == 2.0f)  temp_color = float4(0.35f, 0.27f, 0.16f, 1.0f);	
-	// }
-    //OUT.vcolor_radar = temp_color;
-	//OUT.vcolor_radar = float4(IN.controlflag.g, IN.controlflag.g, IN.controlflag.g, 1.0f);
-	OUT.vcolor_radar = float4((0.5f + height), (0.5f - height), 0.0f, 1.0f);
+    if( range < max_range_radar_test*1.2f) //乘一个值是因为在顶点着色器内点很稀疏，边缘不整齐，导致在片段shader内远端颜色不正常
+    {
+		if(radar_color_mode_test == 1.0f)  //分层着色
+		{
+			temp_color.rgb = height;
+		}
+		else if(radar_color_mode_test == 2.0f)  //分层着色
+		{
+			if(model_type == 1.0f)
+				temp_color.rgb = height*0.35f;
+			else
+				temp_color.rgb = height;
+		}
+
+		temp_color.a = 1.0f;
+	}
+	OUT.vcolor_radar = temp_color;
 
 	if(IN.controlflag.r == 1.0f) 
 	{
@@ -166,10 +177,14 @@ vertout SensorVertexShader3(appin IN,uniform float4x4 modelViewProj,
 	else if(IN.controlflag.r == 2.0f)
 	{
 		OUT.color0 = float4(1,1,0,1);
+		if(model_type == 2.0f)     //树干要在radar中显示出来，这里用0.5标记
+			OUT.color0.b = 0.5f;
 	}
 	else if(IN.controlflag.r == 3.0f)
 	{
 		OUT.color0 = float4(1,1,0,0);
+		if(model_type == 2.0f)    //树干要在radar中显示出来，这里用0.5标记
+			OUT.color0.b = 0.5f;
 	}
 	else
 		OUT.color0 = float4(1,1,1,1);

@@ -7,8 +7,13 @@ struct fout
 struct fin
 {
 	float4 vcolor_vertex : COLOR0;
-	float4 colorfactor : COLOR1;
+	float4 colorfactor : COLOR1;  //r保存雾的融合比例 a保存是否被积雪覆盖
+	float2 texcoord0 : TEXCOORD0;
+	float2 texcoord1 : TEXCOORD1;
+	float4 color_lidar : TEXCOORD4;
+	float4 color_radar : TEXCOORD5;
 	float4 normal : TEXCOORD6;
+	float3 mvposition : TEXCOORD7;
 };
 
 const float2 sample_offset[9] = 
@@ -26,15 +31,11 @@ const float2 sample_offset[9] =
 
 float4 getIrColor(float4 _color, float _fog_factor, float _accsnow_factor, float _accsnow_flag);
 float getFlag(float4 _pos, float4x4 _view_matrix, float _blendMode_test, float _max_range, float _view_range_r_test, float _view_range_h_test, float _view_range_v_test, float _view_shape_test);
-float4 getRadarColor(float4 _color, float4 _normal, float4x4 _view_matrix, float4x4 _modelviewIT_matrix);
 
-fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vposition : TEXCOORD7, float2 texcoord1 : TEXCOORD1,
-							float4 color_lidar : TEXCOORD4,  
-							float4 color_radar : TEXCOORD5,
+fout SensorFragmentShader3(	in fin IN, 
 							uniform sampler2D decal,
 							uniform float4x4 modelView,
 							uniform float4x4 modelViewIT,
-							uniform float4x4 proj : state.matrix.projection,
 							uniform sampler2D tex1 : TEXUNIT1,
 
 							uniform float max_range_lidar_test,
@@ -69,14 +70,14 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 							)
 {
 	fout OUT;
-	float4 color[9];// = tex2D(decal, texcoord0);
+	float4 color[9];// = tex2D(decal, IN.texcoord0);
 
-	color[0] = tex2D(decal, texcoord0 + sample_offset[0]);
+	color[0] = tex2D(decal, IN.texcoord0 + sample_offset[0]);
 	float4 color_model = color[0];
 
 	// for(int i = 0; i < 9; i++)
 	// {
-	// 	color[i] = tex2D(decal, texcoord0 + sample_offset[i]);
+	// 	color[i] = tex2D(decal, IN.texcoord0 + sample_offset[i]);
 	// }
 	//float4 color_model = float4((color[0] + color[1]*2 + color[2] + color[3]*2 + color[4] + color[5]*2 + color[6] + color[7]*2 + color[8]).xyz/13, 1.0f);
 	//float4 color_model = float4((color[0]*8 - color[1] - color[2] - color[3] - color[4] - color[5] - color[6] - color[7] - color[8]).xyz, 1.0f);
@@ -87,8 +88,7 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 		return OUT;
 	}
 
-	float4 tempPosition = float4( vposition.x, vposition.y, vposition.z, 1.0f);
-	float4 position = mul(modelView, tempPosition);
+	float4 position = float4( IN.mvposition.x, IN.mvposition.y, IN.mvposition.z, 1.0f); //从顶点作色器传过来的是经过插值的eye空间坐标
 
 	//判断lidar形状-start
 	float flag_lidar = getFlag(	position, 
@@ -137,7 +137,7 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 	float distance_lidar = length(pp_lidar.xyz);  //到传感器的距离
 	if(flag_lidar == 1.0f)
 	{
-		colorlidar = tex2D(tex1, texcoord1);
+		colorlidar = tex2D(tex1, IN.texcoord1);
 	}
 	else
 	{
@@ -153,18 +153,26 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 	float databse_show_flag = IN.vcolor_vertex.a; //标记了当前点是否在database内显示
 	float radar_show_flag = IN.vcolor_vertex.b; //标记了当前点是否在radar内显示
 
-	if(radar_show_flag < 0.1f)
+	if(radar_show_flag < 0.6f)   //根据是否在radar中显示来修改radar_color
 	{
-		float l = color_model.r*0.45f+color_model.g*0.4f+color_model.b*0.15f;
-		//if(l < 0.16f && l > 0.15f)   //树干的l值较小,
-		if(color_model.r*1.05f > color_model.g)  
+		if(radar_show_flag < 0.1f)
 		{
-			color_radar = float4(color_radar.rgb,1.0f);
-			radar_show_flag = 1.0f;
+			IN.color_radar = float4(0,0,0,0);  // 如果在radar内不显示，那么它的radar颜色就应该是透明的
 		}
-
-		else
-			color_radar = float4(0,0,0,0);  // 如果在radar内不显示，那么它的radar颜色就应该是透明的
+		else   //处理树干
+		{
+			//float l = color_model.r*0.45f+color_model.g*0.4f+color_model.b*0.15f;
+			//if(l < 0.16f && l > 0.15f)   //树干的l值较小,
+			if(color_model.r*1.05f > color_model.g)  
+			{
+				IN.color_radar = float4(IN.color_radar.rgb,1.0f);
+				radar_show_flag = 1.0f;
+			}
+			else
+			{
+				IN.color_radar = float4(0,0,0,0);
+			}
+		}
 	}
 
 	float4 color_database = color_model;
@@ -175,7 +183,7 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 	if(blendMode_test == 1.0f)  //Lidar
 	{
 		if(flag_lidar == 1.0f && flag_a == 1.0f)
-			OUT.color = float4(color_lidar.xyz, 1.0f);
+			OUT.color = float4(IN.color_lidar.xyz, 1.0f);
 		else
 			OUT.color = float4(0.0f, 0.0f, 0.0f, 1.0f); 
 	}
@@ -183,7 +191,7 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 	{
 		if(flag_lidar == 1.0f)
 		{
-			if(flag_a == 1.0f) OUT.color = float4(color_lidar.xyz, 1.0f);
+			if(flag_a == 1.0f) OUT.color = float4(IN.color_lidar.xyz, 1.0f);
 			else OUT.color = float4(0.0f, 0.0f, 0.0f, 1.0f);
 		}
 		else
@@ -195,12 +203,12 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a);  
 		else if(flag_ir == 0.0f && flag_lidar == 1.0f)  
 		{			
-			if(flag_a == 1.0f) OUT.color = float4(color_lidar.xyz, 1.0f);
+			if(flag_a == 1.0f) OUT.color = float4(IN.color_lidar.xyz, 1.0f);
 			else OUT.color = float4(0.0f, 0.0f, 0.0f, 1.0f); 
 		}
 		else if(flag_ir == 1.0f && flag_lidar == 1.0f)
 		{
-			if(flag_a == 1.0f) OUT.color = float4(color_lidar.xyz, 1.0f);
+			if(flag_a == 1.0f) OUT.color = float4(IN.color_lidar.xyz, 1.0f);
 			else OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a); 
 		}
 		else 
@@ -212,12 +220,12 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a);  
 		else if(flag_ir == 0.0f && flag_lidar == 1.0f)  
 		{			
-			if(flag_a == 1.0f) OUT.color = float4(color_lidar.xyz, 1.0f);
+			if(flag_a == 1.0f) OUT.color = float4(IN.color_lidar.xyz, 1.0f);
 			else OUT.color = float4(0.0f, 0.0f, 0.0f, 1.0f); 
 		}
 		else if(flag_ir == 1.0f && flag_lidar == 1.0f)
 		{
-			if(flag_a == 1.0f) OUT.color = float4(color_lidar.xyz, 1.0f);
+			if(flag_a == 1.0f) OUT.color = float4(IN.color_lidar.xyz, 1.0f);
 			else OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a); 
 		}
 		else 
@@ -227,12 +235,7 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 	{
 		if(flag_radar == 1.0f)
 		{
-			//float intensity = (color_model.r +  color_model.g +  color_model.b)/3;
-			//float4 graycolor = float4(intensity,intensity,intensity,1.0f);
-			//OUT.color = lerp(graycolor,color_radar,0.9f);
-			//if( 0 == color_radar.a )  OUT.color = float4(OUT.color.rgb,0.0f);
-			//OUT.color = getRadarColor(color_model, IN.normal, view_radar_test, modelViewIT);
-			OUT.color = color_radar;
+			OUT.color = IN.color_radar;
 		}
 		else
 			OUT.color = float4(0.0f, 0.0f, 0.0f, 0.0f); 
@@ -241,12 +244,7 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 	{
 		if(flag_radar == 1.0f)
 		{
-			// float intensity = (color_model.r +  color_model.g +  color_model.b)/3;
-			// float4 graycolor = float4(intensity,intensity,intensity,1.0f);
-			// OUT.color = lerp(graycolor,color_radar,0.9f);
-			// if( 0 == color_radar.a )  OUT.color = float4(OUT.color.rgb,0.0f);
-			//OUT.color = getRadarColor(color_model, IN.normal, view_radar_test, modelViewIT);
-			OUT.color = color_radar;
+			OUT.color = IN.color_radar;
 		}
 		else
 			OUT.color = color_database; 
@@ -257,22 +255,14 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a);   
 		else if(flag_ir == 0.0f && flag_radar == 1.0f)
 		{
-			// float intensity = (color_model.r +  color_model.g +  color_model.b)/3;
-			// float4 graycolor = float4(intensity,intensity,intensity,1.0f);
-			// OUT.color = lerp(graycolor,color_radar,0.9f);
-			// if( 0 == color_radar.a )  OUT.color = float4(OUT.color.rgb,0.0f);
-			//OUT.color = getRadarColor(color_model, IN.normal, view_radar_test, modelViewIT);
-			OUT.color = color_radar;
-
+			OUT.color = IN.color_radar;
 		}
 		else if(flag_ir == 1.0f && flag_radar == 1.0f)
 		{
-
-			//color_radar = getRadarColor(color_model, IN.normal, modelViewIT, modelViewIT);
 			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a); 
 			if(radar_show_flag > 0.9f)    //有些场景细节会被穿透
 			{
-				OUT.color = lerp(color_radar, OUT.color, (0.45+ pow(2*color_radar.g, 2) * 0.55) * OUT.color.a);
+				OUT.color = lerp(OUT.color, IN.color_radar, (0.4+ pow(IN.color_radar.r, 2) * 0.5) * OUT.color.a);
 				OUT.color.a = 1.0f;
 			}
 			else
@@ -288,20 +278,14 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a);   
 		else if(flag_ir == 0.0f && flag_radar == 1.0f)
 		{
-			// float intensity = (color_model.r +  color_model.g +  color_model.b)/3;
-			// float4 graycolor = float4(intensity,intensity,intensity,1.0f);
-			// OUT.color = lerp(graycolor,color_radar,0.9f);
-			// if( 0 == color_radar.a )  OUT.color = float4(OUT.color.rgb,0.0f);
-			//OUT.color = getRadarColor(color_model, IN.normal, view_radar_test, modelViewIT);
-			OUT.color = color_radar;
+			OUT.color = IN.color_radar;
 		}
 		else if(flag_ir > 0.9f && flag_radar > 0.9f)
 		{
-			//color_radar = getRadarColor(color_model, IN.normal, modelViewIT, modelViewIT);
 			OUT.color = getIrColor(color_model, IN.colorfactor.r, density, IN.colorfactor.a); 
 			if(radar_show_flag > 0.9f)   //有些场景细节会被穿透
 			{
-				OUT.color = lerp(color_radar, OUT.color, (0.45+ pow(2*color_radar.g, 2) * 0.55) * OUT.color.a);
+				OUT.color = lerp(OUT.color, IN.color_radar, (0.4+ pow(IN.color_radar.r, 2) * 0.5) * OUT.color.a);
 				OUT.color.a = 1.0f;
 			}
 			else
@@ -309,10 +293,7 @@ fout SensorFragmentShader3(	in fin IN, float2 texcoord0 : TEXCOORD0, float3 vpos
 		}
 		else
 			OUT.color = color_database; 
-	}
-
-	//OUT.color = color_model;
-	//OUT.color = float4(1.0f, 0.0f, 0.0f, 0.0f); 
+	} 
 		
 	return OUT;
 }
@@ -325,25 +306,24 @@ float4 getIrColor(float4 _color, float _fog_factor, float _accsnow_factor, float
 
 	if(__color.a < 0.1f )	return __color = float4(0,0,0,0);
 	
-	if(_accsnow_flag >= 0.9f)
+	if(_accsnow_flag >= 0.9f)     //先处理积雪
 	{
 		__intensity = (__color.r + __color.g + __color.b) * 0.333333f;
-		__color = float4(lerp(float3(__color.r,__color.g,__color.b),float3(1.0f, 1.0f, 1.0f),__intensity * _accsnow_factor), 1.0f);
+		__color = float4( lerp(float3(__color.r, __color.g, __color.b), float3(0.9f, 0.9f, 0.9f), __intensity * _accsnow_factor), 1.0f);
 	}
 	
-	__intensity = clamp(0.299*__color.r + 0.587*__color.g + 0.114*__color.b, 0, 1);
 
-	
-	if(__intensity < 0.2)  __intensity = 0.1f;
-	else if(__intensity < 0.4)  __intensity = 0.3f;
-	else if(__intensity < 0.6)  __intensity = 0.5f;
-	else if(__intensity < 0.8)  __intensity = 0.7f;
-	else if(__intensity < 1.0)  __intensity = 0.9f;
-	
+	//__intensity = clamp(0.299*__color.r + 0.587*__color.g + 0.114*__color.b, 0, 1);   //再处理红外
+	__intensity = (__color.r + __color.g + __color.b) * 0.333333f;
+	// if(__intensity < 0.2)  __intensity = 0.1f;
+	// else if(__intensity < 0.4)  __intensity = 0.3f;
+	// else if(__intensity < 0.6)  __intensity = 0.5f;
+	// else if(__intensity < 0.8)  __intensity = 0.7f;
+	// else if(__intensity < 1.0)  __intensity = 0.9f;
 	float gray = 1.0f - __intensity;
 	__color = float4(gray,gray,gray,1.0f);
 	
-	__color = float4(__color.xyzw * _fog_factor + (1 - _fog_factor) * float4(0.0f, 0.0f, 0.0f, 0.0f));
+	__color = float4(__color.xyzw * _fog_factor + (1 - _fog_factor) * float4(0.0f, 0.0f, 0.0f, 0.0f));  //最后处理雾
 	
 	return __color;
 }
@@ -367,31 +347,4 @@ float getFlag(float4 _pos, float4x4 _view_matrix, float _blendMode_test, float _
 			flag = 1.0f;
 	//判断lidar形状-end
 	return flag;
-}
-
-float4 getRadarColor(float4 _color, float4 _normal, float4x4 _view_matrix, float4x4 _modelviewIT_matrix)
-{
-	if(_color.a < 0.2)
-		return float4(0,0,0,0);
-
-	float4 normal_eye = mul(_modelviewIT_matrix, float4(_normal.xyz, 0.0f));
-	float anglecos = dot(normalize(normal_eye.xyz), float3(0,0,1));
-	float nangle = acos(anglecos)/3.141592654;
-	float l = (_color.r+_color.g+_color.b)*0.3333333;
-
-	// if(l > 0.2f)
-	// 	l = 1.0f;
-	// else
-	// 	l = 0.1;
-
-	if(nangle < 0.75)
-	{
-		nangle = 1 - nangle*2;
-		return lerp(float4(nangle,nangle,nangle,1.0), l, 0.05f);
-		//return float4(nangle,nangle,nangle,1.0);
-	}
-	else
-		return float4(float3(l, l, l)*0.05, 1.0);
-		//return float4(0.05,0.05,0.05,1.0);
-
 }
